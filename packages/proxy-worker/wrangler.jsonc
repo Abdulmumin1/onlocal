@@ -1,0 +1,60 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "proxy-worker-2",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-11-22",
+  // "compatibility_flags": [
+  //   "nodejs_compat"
+  // ],
+  "vars": {
+    "TUNNEL_DOMAIN": "onlocal.dev"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "TUNNEL_KV",
+      "id": "ebc2733927174d77a19cde043ba21baf"
+    }
+  ],
+
+  // "r2_buckets": [
+  //   {
+  //     "binding": "MY_BUCKET",
+  //     "bucket_name": "my-bucket"
+  //   }
+  // ],
+  // "d1_databases": [
+  //   {
+  //     "binding": "MY_DB",
+  //     "database_name": "my-database",
+  //     "database_id": ""
+  //   }
+  // ],
+  // "ai": {
+  //   "binding": "AI"
+  // },
+  
+  "durable_objects": {
+    "bindings": [
+      { 
+        "name": "TUNNEL_DO",
+        "class_name": "TunnelDO"
+      }
+    ]
+  },
+  
+  "routes": [
+    { "pattern": "onlocal.dev/ws", "zone_name": "onlocal.dev" },
+    { "pattern": "*.onlocal.dev/*", "zone_name": "onlocal.dev" },
+    { "pattern": "onlocal.dev", "zone_name": "onlocal.dev" }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["TunnelDO"]
+    }
+  ]
+}

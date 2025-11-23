@@ -1,0 +1,17 @@
+{
+  "name": "proxy-worker",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --minify",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+  },
+  "devDependencies": {
+    "wrangler": "^4.4.0",
+    "@types/bun": "latest"
+  },
+  "dependencies": {
+    "hono": "^4.10.6"
+  }
+}
