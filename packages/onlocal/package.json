@@ -1,11 +1,11 @@
 {
-  "version": "0.0.23",
+  "version": "0.0.24",
   "name": "onlocal",
   "module": "index.ts",
   "type": "module",
   "scripts": {
     "dev": "bun index.ts",
-    "build":"bun build ./index.js --outdir ./dist --target bun"
+    "build":"bun build ./index.ts --outdir ./dist --target node"
   },
   "bin": {
     "onlocal": "dist/index.js"

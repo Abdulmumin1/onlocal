@@ -31,11 +31,18 @@ interface TunnelMessage extends WSMessage {
   url: string;
 }
 
-
+const colors = {
+  cyan: '\x1b[36m',
+  green: '\x1b[32m',
+  gray: '\x1b[90m',
+  yellow: '\x1b[33m',
+  red: '\x1b[31m',
+  reset: '\x1b[0m'
+};
 
 const port = parseInt(process.argv[2] as string);
 if (!port || isNaN(port)) {
-  console.log(`${Bun.color("cyan", "ansi")}Usage: bun index.ts <port>\x1b[0m`);
+  console.log(`${colors.cyan}Usage: bun index.ts <port>${colors.reset}`);
   process.exit(1);
 }
 // 'https://onlocal.dev/ws'
@@ -50,7 +57,7 @@ const maxConcurrent = 20;
 let requestQueue: (() => void)[] = [];
 
 ws.onopen = () => {
-  console.log(`${Bun.color("green", "ansi")}✓ Connected to proxy, proxying to localhost:${port}\x1b[0m`);
+  console.log(`${colors.green}✓ Connected to proxy, proxying to localhost:${port}${colors.reset}`);
 };
 
 const processRequest = async (req: RequestMessage) => {
@@ -58,14 +65,14 @@ const processRequest = async (req: RequestMessage) => {
   try {
     const url = new URL(req.url);
     const targetUrl = `${url.protocol}//localhost:${port}${url.pathname}${url.search}`;
-    // console.log(`${Bun.color("gray", "ansi")}📡 Request: ${targetUrl}\x1b[0m`)
+    // console.log(`${colors.gray}📡 Request: ${targetUrl}${colors.reset}`)
     const res = await fetch(targetUrl, {
       method: req.method,
       headers: req.headers,
       body: req.body,
     });
     const statusColor = res.status >= 200 && res.status < 300 ? "green" : res.status >= 400 ? "red" : "yellow";
-    console.log(`${Bun.color("cyan", "ansi")}[${req.method}] ${Bun.color(statusColor, "ansi")}${res.status}\x1b[0m ${Bun.color("gray", "ansi")}[${url.pathname}${url.search}]\x1b[0m`);
+    console.log(`${colors.cyan}[${req.method}] ${colors[statusColor]}${res.status}${colors.reset} ${colors.gray}[${url.pathname}${url.search}]${colors.reset}`);
     const contentType = res.headers.get('content-type') || '';
     let body: { type: 'text' | 'binary'; data: string };
     if (contentType.startsWith('text/') || contentType.includes('json') || contentType.includes('javascript') || contentType.includes('xml')) {
@@ -103,12 +110,12 @@ ws.onmessage = async (event) => {
       }
      } else if (data.type === 'tunnel') {
        const tunnel = data as TunnelMessage;
-       console.log(`${Bun.color("yellow", "ansi")}🌐 Tunnel established: ${tunnel.url}\x1b[0m`);
+       console.log(`${colors.yellow}🌐 Tunnel established: ${tunnel.url}${colors.reset}`);
      } else if (data.type === 'ping') {
        ws.send(JSON.stringify({ type: 'pong' }));
      }
    } catch (e) {
-     console.error(`${Bun.color("red", "ansi")} Error handling request:\x1b[0m`, e);
+      console.error(`${colors.red} Error handling request:${colors.reset}`, e);
      // Send error response
      const responseData: ResponseMessage = {
        type: 'response',
@@ -122,9 +129,9 @@ ws.onmessage = async (event) => {
  };
 
 ws.onclose = () => {
-  console.log(`${Bun.color("yellow", "ansi")} Disconnected from proxy\x1b[0m`);
+  console.log(`${colors.yellow} Disconnected from proxy${colors.reset}`);
 };
 
 ws.onerror = (error) => {
-  console.error(`${Bun.color("red", "ansi")} WebSocket error:\x1b[0m`, error);
+  console.error(`${colors.red} WebSocket error:${colors.reset}`, error);
 };
