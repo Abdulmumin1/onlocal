@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 interface WSMessage {
   type: 'request' | 'response' | 'port' | 'tunnel' | 'ping' | 'pong';
@@ -40,7 +40,7 @@ if (!port || isNaN(port)) {
 }
 // 'https://onlocal.dev/ws'
 
-const PROXY_WS_URL: string | null =  null;
+const PROXY_WS_URL: string | null =  "https://onlocal.dev/ws";
 
 const wsUrl = PROXY_WS_URL || 'ws://localhost:8787/ws';
 const ws = new WebSocket(wsUrl);

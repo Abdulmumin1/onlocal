@@ -4,7 +4,8 @@
   "module": "index.ts",
   "type": "module",
   "scripts": {
-    "dev": "bun index.ts"
+    "dev": "bun index.ts",
+    "build":"bun build ./index.js --outdir ./dist --target bun"
   },
   "bin": {
     "onlocal": "dist/index.js"
