@@ -64,7 +64,7 @@ const processRequest = async (req: RequestMessage) => {
   activeRequests++;
   try {
     const url = new URL(req.url);
-    const targetUrl = `${url.protocol}//localhost:${port}${url.pathname}${url.search}`;
+    const targetUrl = `http://localhost:${port}${url.pathname}${url.search}`;
     // console.log(`${colors.gray}📡 Request: ${targetUrl}${colors.reset}`)
     const res = await fetch(targetUrl, {
       method: req.method,
