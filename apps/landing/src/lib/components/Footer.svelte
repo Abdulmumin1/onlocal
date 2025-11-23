@@ -19,7 +19,7 @@
 
 		<div class="flex flex-col md:flex-row items-center justify-between pt-8 border-t border-stone-800">
 			<p class="text-stone-600 text-sm mb-4 md:mb-0">
-				[C] {new Date().getFullYear()} By <a href="hover:text-(--color-primary-light) hover:underline decoration-(--color-primary) underline-offset-4">[Abdulmumin]</a> X <a href="hover:text-(--color-primary-light)hover:underline decoration-(--color-primary) underline-offset-4 ">[The Thirdpen Company]</a>
+				[C] {new Date().getFullYear()} By <a href="https://yaqeen.me" class="hover:text-(--color-primary-light) hover:underline decoration-(--color-primary) underline-offset-4">[Abdulmumin]</a> X <a href="https://thirdpen.app" class="hover:text-(--color-primary-light)hover:underline decoration-(--color-primary) underline-offset-4 ">[The Thirdpen Company]</a>
 			</p>
 			<div class="flex space-x-6">
 				<a href="https://github.com/abdulmumin1/onlocal" class="text-stone-500 hover:text-white transition-colors">
