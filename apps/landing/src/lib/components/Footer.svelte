@@ -22,8 +22,8 @@
 			<div class="flex items-center justify-center py-4">
 				<ul class="flex gap-12 text-sm text-stone-500">
 					<li><a href="https://github.com/abdulmumin1/onlocal" class="hover:text-[var(--color-primary)] hover:underline decoration-[var(--color-primary)] underline-offset-4 transition-colors">Source Code</a></li>
-					<li><a href="#" class="hover:text-[var(--color-primary)] hover:underline decoration-[var(--color-primary)] underline-offset-4 transition-colors">Documentation</a></li>
-					<li><a href="#" class="hover:text-[var(--color-primary)] hover:underline decoration-[var(--color-primary)] underline-offset-4 transition-colors">Issues</a></li>
+					<li><a href="https://github.com/abdulmumin1/onlocal" class="hover:text-[var(--color-primary)] hover:underline decoration-[var(--color-primary)] underline-offset-4 transition-colors">Documentation</a></li>
+					<li><a href="https://github.com/abdulmumin1/onlocal" class="hover:text-[var(--color-primary)] hover:underline decoration-[var(--color-primary)] underline-offset-4 transition-colors">Issues</a></li>
 				</ul>
 			</div>
 
