@@ -36,7 +36,7 @@
 			<!-- CTA Button -->
 			<div class="hidden md:block">
 				<a
-					href="https://github.com/onlocal-dev/onlocal"
+					href="https://github.com/abdulmumin1/onlocal"
 					target="_blank"
 					rel="noopener noreferrer"
 					class="border border-stone-600 bg-black text-white hover:bg-white hover:text-black px-4 py-1 transition-all"
