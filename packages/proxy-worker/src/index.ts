@@ -66,7 +66,7 @@ app.all('*', async (c) => {
 
   console.log('Host:', host, 'Path:', url.pathname, 'ClientId:', clientId);
   if (!clientId) {
-    return c.redirect('https://www.onlocal.dev', 302);
+    return c.redirect('https://onlocal.pages.dev', 302);
   }
 
   // Get DO ID from KV
