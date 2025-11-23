@@ -26,6 +26,7 @@ app.get('/ws', async (c) => {
     });
     return await stub.fetch(newReq);
   } else {
+    
     // Create new tunnel
     clientId = Math.random().toString(36).substr(2, 9);
     doId = c.env.TUNNEL_DO.newUniqueId();
@@ -47,23 +48,17 @@ app.get('/ws', async (c) => {
 
 app.all('*', async (c) => {
   console.log('HTTP request:', c.req.url, 'host:', c.req.header('host'));
-  // Extract client ID from subdomain or path
+  // Extract client ID from subdomain
   const host = c.req.header('host') || '';
   const domain = c.env.TUNNEL_DOMAIN || 'localhost';
   const url = new URL(c.req.url);
   let clientId: string | null = null;
 
-  // First, try subdomain
   const subdomainMatch = host.match(new RegExp(`^([a-z0-9]+)\\.${domain.replace(/\./g, '\\.')}`));
   console.log('Subdomain match:', subdomainMatch);
   if (subdomainMatch) {
     clientId = subdomainMatch[1];
-  } else {
-    // Fallback for dev: use path /<clientId>
-    const pathParts = url.pathname.split('/').filter(p => p);
-    clientId = pathParts[0] || null;
   }
-
   console.log('Host:', host, 'Path:', url.pathname, 'ClientId:', clientId);
   if (!clientId) {
     return c.redirect('https://onlocal.pages.dev', 302);

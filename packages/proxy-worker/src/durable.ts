@@ -56,33 +56,13 @@ export class TunnelDO extends DurableObject<Env> {
       });
     }
 
-    // Handle HTTP requests
     console.log('HTTP request for clientId:', this.clientId);
     if (!this.clientId) {
       console.log('Client not connected or no clientId');
       return new Response("Client not connected", { status: 503 });
     }
 
-    // Handle HTTP requests
-    const host = request.headers.get("host") || "";
-    const domain = this.env.TUNNEL_DOMAIN || "onlocal.dev";
-
-    let clientId: string | null = null;
-
-    // First, try subdomain
-    const subdomainMatch = host.match(
-      new RegExp(`^([a-z0-9]+)\\.${domain.replace(/\./g, "\\.")}`)
-    );
-    console.log(subdomainMatch);
-    if (subdomainMatch) {
-      clientId = subdomainMatch[1];
-    }
-    if (!clientId) {
-      return new Response("Invalid subdomain", { status: 400 });
-    }
-
-    // console.log('wann finishe this',this.clients)
-    if (!this.clients.has(clientId)) {
+    if (!this.clients.has(this.clientId)) {
       return new Response("Client not connected", { status: 503 });
     }
 
