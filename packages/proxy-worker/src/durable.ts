@@ -16,22 +16,22 @@ interface Env {
 }
 
 export class TunnelDO extends DurableObject<Env> {
-  clients: Map<string, WebSocket>;
+  
+  clients: Map<string, WebSocket> = new Map();
   pendingRequests: Map<string, { resolve: (res: Response) => void; reject: (err: Error) => void; url: string }>;
   clientId: string | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    this.clients = new Map();
     this.pendingRequests = new Map();
   }
 
   async initialize() {
     if (!this.clientId) {
-      this.clientId = await this.env.TUNNEL_KV.get(this.ctx.id.toString());
+      this.clientId = await this.ctx.storage.get('clientId') as string;
       console.log('Initialized clientId:', this.clientId, 'for DO:', this.ctx.id.toString());
       if (!this.clientId) {
-        console.log('No clientId in KV for DO:', this.ctx.id.toString());
+        console.log('No clientId in DO storage for DO:', this.ctx.id.toString());
       }
     }
   }
@@ -47,8 +47,8 @@ export class TunnelDO extends DurableObject<Env> {
       const client = webSocketPair[0];
       const server = webSocketPair[1];
 
-      this.handleWebSocket(server);
-      server.accept()
+      server.accept();
+      this.handleWebSocket(server, request);
 
       return new Response(null, {
         status: 101,
@@ -64,14 +64,8 @@ export class TunnelDO extends DurableObject<Env> {
     }
 
     // Handle HTTP requests
-    console.log('this is the client id', this.clientId);
-    if (!this.clientId.length) {
-      return new Response("Client not connected", { status: 503 });
-    }
-
-    // Handle HTTP requests
     const host = request.headers.get("host") || "";
-    const domain = this.env.TUNNEL_DOMAIN || "app.onlocal.dev";
+    const domain = this.env.TUNNEL_DOMAIN || "onlocal.dev";
 
     let clientId: string | null = null;
 
@@ -113,16 +107,19 @@ export class TunnelDO extends DurableObject<Env> {
           this.pendingRequests.delete(reqId);
           reject(new Error("Timeout"));
         }
-      }, 90000);
+      }, 30000);
     }).catch(() => new Response("Timeout", { status: 504 }));
   }
 
-  async handleWebSocket(ws: WebSocket) {
-    await this.initialize();
+  async handleWebSocket(ws: WebSocket, request: Request) {
+    if (!this.clientId) {
+      this.clientId = request.headers.get('X-Client-Id') || await this.ctx.storage.get('clientId') as string;
+    }
     console.log('Handling WS for clientId:', this.clientId);
     if (!this.clientId) return;
 
     this.clients.set(this.clientId, ws);
+    await this.ctx.storage.put('clientId', this.clientId);
 
     // Send tunnel URL
     const domain = this.env.TUNNEL_DOMAIN || 'localhost';
@@ -139,8 +136,8 @@ export class TunnelDO extends DurableObject<Env> {
     ws.addEventListener("message", (event) => {
       try {
         const data: WSMessage = JSON.parse(event.data as string);
-        console.log("WS message:", data.type, (data as any).id);
-        if (data.type === "response") {
+        console.log("WS message:", data.type, (data as any)?.id);
+        if (data?.type === "response") {
           const resMsg = data as ResponseMessage;
           const pending = this.pendingRequests.get(resMsg.id);
           if (pending) {

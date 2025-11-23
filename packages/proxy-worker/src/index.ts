@@ -20,13 +20,17 @@ app.get('/ws', async (c) => {
     const doIdString = await c.env.TUNNEL_KV.get(clientId);
     doId = c.env.TUNNEL_DO.idFromString(doIdString!);
     console.log('Reusing WS for clientId:', clientId, 'doId:', doId.toString());
+    const stub = c.env.TUNNEL_DO.get(doId);
+    const newReq = new Request(c.req.raw, {
+      headers: { ...Object.fromEntries(c.req.raw.headers.entries()), 'X-Client-Id': clientId }
+    });
+    return await stub.fetch(newReq);
   } else {
     // Create new tunnel
     clientId = Math.random().toString(36).substr(2, 9);
     doId = c.env.TUNNEL_DO.newUniqueId();
     console.log('New WS: clientId:', clientId, 'doId:', doId.toString());
     try {
-      await c.env.TUNNEL_KV.put(doId.toString(), clientId);
       await c.env.TUNNEL_KV.put(clientId, doId.toString());
       console.log('KV stored for clientId:', clientId);
     } catch (e) {
@@ -35,7 +39,10 @@ app.get('/ws', async (c) => {
   }
 
   const stub = c.env.TUNNEL_DO.get(doId);
-  return await stub.fetch(c.req.raw);
+  const newReq = new Request(c.req.raw, {
+    headers: { ...Object.fromEntries(c.req.raw.headers.entries()), 'X-Client-Id': clientId }
+  });
+  return await stub.fetch(newReq);
 });
 
 app.all('*', async (c) => {

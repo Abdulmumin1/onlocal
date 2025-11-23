@@ -1,9 +1,13 @@
 {
+  "version": "0.0.21",
   "name": "onlocal",
   "module": "index.ts",
   "type": "module",
   "scripts": {
     "dev": "bun index.ts"
+  },
+  "bin": {
+    "onlocal": "dist/index.js"
   },
   "devDependencies": {
     "@types/bun": "latest"
