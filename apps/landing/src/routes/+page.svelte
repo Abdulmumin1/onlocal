@@ -2,8 +2,6 @@
 	import Navbar from '$lib/components/Navbar.svelte';
 	import Hero from '$lib/components/Hero.svelte';
 	import Features from '$lib/components/Features.svelte';
-	import HowItWorks from '$lib/components/HowItWorks.svelte';
-	import Pricing from '$lib/components/Pricing.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 </script>
 
@@ -13,8 +11,6 @@
 	<main>
 		<Hero />
 		<Features />
-		<!-- <HowItWorks /> -->
-		<!-- <Pricing /> -->
 	</main>
 	<Footer />
 </div>

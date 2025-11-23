@@ -25,7 +25,7 @@
 					{#each navLinks as link}
 						<a
 							href={link.href}
-							class="text-stone-400 hover:text-(--color-primary-light) px-3 py-2 font-medium transition-colors hover:underline decoration-[var(--color-primary)] underline-offset-4"
+							class="text-stone-400 hover:text-(--color-primary-light) px-3 py-2 font-medium transition-colors hover:underline decoration-(--color-primary) underline-offset-4"
 						>
 							[{link.name}]
 						</a>
