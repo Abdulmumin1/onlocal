@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 interface WSMessage {
-  type: 'request' | 'response' | 'port' | 'tunnel';
+  type: 'request' | 'response' | 'port' | 'tunnel' | 'ping' | 'pong';
 }
 
 interface RequestMessage extends WSMessage {
@@ -31,18 +31,64 @@ interface TunnelMessage extends WSMessage {
   url: string;
 }
 
+
+
 const port = parseInt(process.argv[2] as string);
 if (!port || isNaN(port)) {
-  console.error('Usage: bun index.ts <port>');
+  console.log(`${Bun.color("cyan", "ansi")}Usage: bun index.ts <port>\x1b[0m`);
   process.exit(1);
 }
-const PROXY_WS_URL: string | null =  'https://onlocal.dev/ws'
+// 'https://onlocal.dev/ws'
+
+const PROXY_WS_URL: string | null =  null;
 
 const wsUrl = PROXY_WS_URL || 'ws://localhost:8787/ws';
 const ws = new WebSocket(wsUrl);
 
+let activeRequests = 0;
+const maxConcurrent = 20;
+let requestQueue: (() => void)[] = [];
+
 ws.onopen = () => {
-  console.log(`Connected to proxy, proxying to localhost:${port}`);
+  console.log(`${Bun.color("green", "ansi")}✓ Connected to proxy, proxying to localhost:${port}\x1b[0m`);
+};
+
+const processRequest = async (req: RequestMessage) => {
+  activeRequests++;
+  try {
+    const url = new URL(req.url);
+    const targetUrl = `${url.protocol}//localhost:${port}${url.pathname}${url.search}`;
+    // console.log(`${Bun.color("gray", "ansi")}📡 Request: ${targetUrl}\x1b[0m`)
+    const res = await fetch(targetUrl, {
+      method: req.method,
+      headers: req.headers,
+      body: req.body,
+    });
+    const statusColor = res.status >= 200 && res.status < 300 ? "green" : res.status >= 400 ? "red" : "yellow";
+    console.log(`${Bun.color("cyan", "ansi")}[${req.method}] ${Bun.color(statusColor, "ansi")}${res.status}\x1b[0m ${Bun.color("gray", "ansi")}[${url.pathname}${url.search}]\x1b[0m`);
+    const contentType = res.headers.get('content-type') || '';
+    let body: { type: 'text' | 'binary'; data: string };
+    if (contentType.startsWith('text/') || contentType.includes('json') || contentType.includes('javascript') || contentType.includes('xml')) {
+      body = { type: 'text', data: await res.text() };
+    } else {
+      const buffer = await res.arrayBuffer();
+      body = { type: 'binary', data: Buffer.from(buffer).toString('base64') };
+    }
+    const responseData: ResponseMessage = {
+      type: 'response',
+      id: req.id,
+      status: res.status,
+      headers: Object.fromEntries(res.headers.entries()),
+      body,
+    };
+    ws.send(JSON.stringify(responseData));
+  } finally {
+    activeRequests--;
+    if (requestQueue.length > 0) {
+      const next = requestQueue.shift()!;
+      next();
+    }
+  }
 };
 
 ws.onmessage = async (event) => {
@@ -50,52 +96,35 @@ ws.onmessage = async (event) => {
     const data: WSMessage = JSON.parse(event.data);
     if (data.type === 'request') {
       const req = data as RequestMessage;
-      const url = new URL(req.url);
-      const targetUrl = `http://localhost:${port}${url.pathname}${url.search}`;
-      const res = await fetch(targetUrl, {
-        method: req.method,
-        headers: req.headers,
-        body: req.body,
-      });
-      console.log(`[${req.method}] ${res.status} [${url.pathname}${url.search}] `);
-      const contentType = res.headers.get('content-type') || '';
-      let body: { type: 'text' | 'binary'; data: string };
-      if (contentType.startsWith('text/') || contentType.includes('json') || contentType.includes('javascript') || contentType.includes('xml')) {
-        body = { type: 'text', data: await res.text() };
+      if (activeRequests < maxConcurrent) {
+        processRequest(req);
       } else {
-        const buffer = await res.arrayBuffer();
-        body = { type: 'binary', data: Buffer.from(buffer).toString('base64') };
+        requestQueue.push(() => processRequest(req));
       }
-      const responseData: ResponseMessage = {
-        type: 'response',
-        id: req.id,
-        status: res.status,
-        headers: Object.fromEntries(res.headers.entries()),
-        body,
-      };
-      ws.send(JSON.stringify(responseData));
-    } else if (data.type === 'tunnel') {
-      const tunnel = data as TunnelMessage;
-      console.log(`Tunnel established: ${tunnel.url}`);
-    }
-  } catch (e) {
-    console.error('Error handling request:', e);
-    // Send error response
-    const responseData: ResponseMessage = {
-      type: 'response',
-      id: 'unknown',
-      status: 500,
-      headers: {},
-      body: { type: 'text', data: 'Internal error' },
-    };
-    ws.send(JSON.stringify(responseData));
-  }
-};
+     } else if (data.type === 'tunnel') {
+       const tunnel = data as TunnelMessage;
+       console.log(`${Bun.color("yellow", "ansi")}🌐 Tunnel established: ${tunnel.url}\x1b[0m`);
+     } else if (data.type === 'ping') {
+       ws.send(JSON.stringify({ type: 'pong' }));
+     }
+   } catch (e) {
+     console.error(`${Bun.color("red", "ansi")} Error handling request:\x1b[0m`, e);
+     // Send error response
+     const responseData: ResponseMessage = {
+       type: 'response',
+       id: 'unknown',
+       status: 500,
+       headers: {},
+       body: { type: 'text', data: 'Internal error' },
+     };
+     ws.send(JSON.stringify(responseData));
+   }
+ };
 
 ws.onclose = () => {
-  console.log('Disconnected from proxy');
+  console.log(`${Bun.color("yellow", "ansi")} Disconnected from proxy\x1b[0m`);
 };
 
 ws.onerror = (error) => {
-  console.error('WebSocket error:', error);
+  console.error(`${Bun.color("red", "ansi")} WebSocket error:\x1b[0m`, error);
 };

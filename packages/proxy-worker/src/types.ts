@@ -1,5 +1,5 @@
 export interface WSMessage {
-  type: 'request' | 'response' | 'port' | 'tunnel';
+  type: 'request' | 'response' | 'port' | 'tunnel' | 'ping' | 'pong';
 }
 
 export interface RequestMessage extends WSMessage {
@@ -28,3 +28,4 @@ export interface TunnelMessage extends WSMessage {
   type: 'tunnel';
   url: string;
 }
+
