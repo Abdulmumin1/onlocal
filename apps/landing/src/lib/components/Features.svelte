@@ -5,7 +5,7 @@
 		{
 			icon: Zap,
 			title: "FAST_EXECUTION",
-			description: "Built on Bun.js. Handles connections with minimal latency. Faster than Node.js alternatives."
+			description: "Built on Bunjs & Cloudflare Durable Objects. Handles connections with minimal latency."
 		},
 		{
 			icon: Lock,
@@ -24,8 +24,8 @@
 		},
 		{
 			icon: Code,
-			title: "DEBUG_MODE",
-			description: "Built-in request inspector dashboard. View headers, body, and replay requests."
+			title: "AUTO_RECONNECT",
+			description: "Automatic reconnects with exponential backoff. Keeps tunnels alive through network drops."
 		},
 		{
 			icon: Terminal,
