@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 interface WSMessage {
   type: 'request' | 'response' | 'port' | 'tunnel' | 'ping' | 'pong';
