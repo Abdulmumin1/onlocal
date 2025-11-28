@@ -6,10 +6,6 @@ import {
   TunnelMessage,
 } from "./types";
 
-function generateClientId(): string {
-  return Math.random().toString(36).substr(2, 9);
-}
-
 interface Env {
   TUNNEL_KV: KVNamespace;
   TUNNEL_DOMAIN: string;
@@ -85,6 +81,7 @@ export class TunnelDO extends DurableObject<Env> {
       request.method,
       request.url
     );
+
     const requestData: RequestMessage = {
       type: "request",
       id: reqId,
@@ -101,13 +98,14 @@ export class TunnelDO extends DurableObject<Env> {
 
     return new Promise<Response>((resolve, reject) => {
       this.pendingRequests.set(reqId, { resolve, reject, url: request.url });
+      
       // Timeout
       setTimeout(() => {
         if (this.pendingRequests.has(reqId)) {
           this.pendingRequests.delete(reqId);
           reject(new Error("Timeout"));
         }
-      }, 30000);
+      }, 60000);
     }).catch(() => new Response("Timeout", { status: 504 }));
   }
 
@@ -117,7 +115,7 @@ export class TunnelDO extends DurableObject<Env> {
         request.headers.get("X-Client-Id") ||
         ((await this.ctx.storage.get("clientId")) as string);
     }
-    console.log("Handling WS for clientId:", this.clientId);
+    // console.log("Handling WS for clientId:", this.clientId);
     if (!this.clientId) return;
 
     this.clients.set(this.clientId, ws);
