@@ -14,6 +14,8 @@ app.get('/ws', async (c) => {
   let clientId: string;
   let doId: DurableObjectId;
 
+  console.log('Provided clientId:', providedClientId);
+
   if (providedClientId && await c.env.TUNNEL_KV.get(providedClientId)) {
     // Reuse existing tunnel
     clientId = providedClientId;
@@ -28,13 +30,14 @@ app.get('/ws', async (c) => {
   } else {
     
     // Create new tunnel
-    clientId = Math.random().toString(36).substr(2, 9);
+    clientId = providedClientId ?? Math.random().toString(36).substr(2, 9);
     doId = c.env.TUNNEL_DO.newUniqueId();
     console.log('New WS: clientId:', clientId, 'doId:', doId.toString());
     try {
       await c.env.TUNNEL_KV.put(clientId, doId.toString());
       console.log('KV stored for clientId:', clientId);
     } catch (e) {
+      // fdsaf
       console.error('KV put error:', e);
     }
   }
@@ -55,10 +58,10 @@ app.all('*', async (c) => {
   let clientId: string | null = null;
 
   const subdomainMatch = host.match(new RegExp(`^([a-z0-9]+)\\.${domain.replace(/\./g, '\\.')}`));
-  console.log('Subdomain match:', subdomainMatch);
   if (subdomainMatch) {
     clientId = subdomainMatch[1];
   }
+
   console.log('Host:', host, 'Path:', url.pathname, 'ClientId:', clientId);
   if (!clientId) {
     return c.redirect('https://onlocal.pages.dev', 302);

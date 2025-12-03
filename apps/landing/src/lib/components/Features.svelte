@@ -20,7 +20,7 @@
 		{
 			icon: Cpu,
 			title: "LOW_MEMORY",
-			description: "Tiny memory footprint. Runs on Raspberry Pi or Potato. Highly efficient."
+			description: "Tiny memory footprint."
 		},
 		{
 			icon: Code,

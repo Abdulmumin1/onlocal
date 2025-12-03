@@ -98,7 +98,7 @@ export class TunnelDO extends DurableObject<Env> {
 
     return new Promise<Response>((resolve, reject) => {
       this.pendingRequests.set(reqId, { resolve, reject, url: request.url });
-      
+
       // Timeout
       setTimeout(() => {
         if (this.pendingRequests.has(reqId)) {
@@ -207,9 +207,11 @@ export class TunnelDO extends DurableObject<Env> {
       );
       if (pingInterval) clearInterval(pingInterval);
       if (pongTimeout) clearTimeout(pongTimeout);
-  
-      this.clients.delete(this.clientId as string);
-      this.env.TUNNEL_KV.delete(this.clientId as string);
+
+      // if (event.code === 1000) {
+      //   this.clients.delete(this.clientId as string);
+      //   this.env.TUNNEL_KV.delete(this.clientId as string);
+      // }
       // Reject pending
       for (const [id, { reject }] of this.pendingRequests) {
         reject(new Error("Client disconnected"));

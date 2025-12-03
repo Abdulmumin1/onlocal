@@ -32,21 +32,25 @@
   // "ai": {
   //   "binding": "AI"
   // },
-  
+
   "durable_objects": {
     "bindings": [
-      { 
+      {
         "name": "TUNNEL_DO",
         "class_name": "TunnelDO"
       }
     ]
   },
-  
-  "routes": [
-    { "pattern": "onlocal.dev/ws", "zone_name": "onlocal.dev" },
-    { "pattern": "*.onlocal.dev/*", "zone_name": "onlocal.dev" },
-    { "pattern": "onlocal.dev", "zone_name": "onlocal.dev" }
-  ],
+
+  "env": {
+    "production": {
+      "routes": [
+        { "pattern": "onlocal.dev/ws", "zone_name": "onlocal.dev" },
+        { "pattern": "*.onlocal.dev/*", "zone_name": "onlocal.dev" },
+        { "pattern": "onlocal.dev", "zone_name": "onlocal.dev" }
+      ]
+    }
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
