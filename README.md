@@ -1,4 +1,4 @@
-# OnLocal
+# onlocal
 
 Expose your local development server to the internet securely via tunnels.
 
@@ -9,11 +9,20 @@ Expose your local development server to the internet securely via tunnels.
 ```bash
 bunx onlocal PORT
 ```
+> supports npx and pnpx
 
-## How to Use (Cloning the repo yourself)
+## OR
+
+install globaly
+
+```bash
+bun add -g onlocal
+```
+
+### How to Use (Cloning the repo yourself)
 
 1. Install dependencies: `bun install`
-2. Start the proxy server: `cd packages/proxy && bun run index.ts`
+2. Start the proxy server: `cd packages/proxy-worker && bun run index.ts`
 3. In another terminal, connect your local server: `cd packages/onlocal && bun run index.ts <port>`
 
 Your local server on `<port>` will be accessible at a generated tunnel URL (e.g., `https://lucky-bread.onlocal.dev`).
@@ -26,7 +35,7 @@ Your local server on `<port>` will be accessible at a generated tunnel URL (e.g.
 ## Code Structure
 
 - `packages/onlocal/`: CLI tool that forwards local requests to the proxy via WebSocket
-- `packages/proxy/`: Local proxy server that handles tunnel creation and HTTP forwarding
+- `packages/proxy/`: A rough POC a put together initially
 - `packages/proxy-worker/`: Cloudflare Worker version for production deployment
 - `apps/landing/`: Landing page built with Svelte
 
@@ -35,10 +44,9 @@ Your local server on `<port>` will be accessible at a generated tunnel URL (e.g.
 ### Supported
 - HTTP request proxying (GET, POST, etc.)
 - Automatic tunnel URL generation with SSL/TLS security
-- Secure random tunnel IDs
+- Automatic reconnect on network error;
 
 ### Not Supported Yet
 - [ ] WebSocket proxying
 - [ ] HTTPS tunnels
 - [ ] Custom domains
-- [ ] Authentication
