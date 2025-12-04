@@ -1,6 +1,6 @@
 # onlocal
 
-Expose your local development server to the internet securely via tunnels.
+Expose your local development server to the internet securely via a web socket tunnel.
 
 ![onlocal.dev tunnel example in ghostty terminal](https://rawcontent.dearfutureself.me/portfolio/Screenshot%202025-11-23%20at%2021.32.33.png)
 
