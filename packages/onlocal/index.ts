@@ -211,6 +211,7 @@ class tunnelClient {
     };
 
     ws.onerror = (error) => {
+      this.reconnect();   
       console.error(`${colors.red} WebSocket error:${colors.reset}`, error);
     };
   }
