@@ -225,6 +225,6 @@ class tunnelClient {
 
 // 'https://onlocal.dev/ws'
 
-let tunnel = new tunnelClient();
+let tunnel = new tunnelClient({ TUNNEL_DOMAIN: "wss://onlocal.dev" });
 tunnel.createWebSocket();
 // { TUNNEL_DOMAIN: "wss://onlocal.dev" }
