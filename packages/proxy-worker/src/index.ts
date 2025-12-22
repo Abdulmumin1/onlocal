@@ -24,7 +24,7 @@ app.get('/ws', async (c) => {
     console.log('Reusing WS for clientId:', clientId, 'doId:', doId.toString());
     const stub = c.env.TUNNEL_DO.get(doId);
     const newReq = new Request(c.req.raw, {
-      headers: { ...Object.fromEntries(c.req.raw.headers.entries()), 'X-Client-Id': clientId }
+      headers: { ...Object.fromEntries(c.req.raw.headers.entries()), 'X-Client-Id': clientId, 'X-Provided-Id': providedClientId ?? '' }
     });
     return await stub.fetch(newReq);
   } else {
@@ -44,7 +44,7 @@ app.get('/ws', async (c) => {
 
   const stub = c.env.TUNNEL_DO.get(doId);
   const newReq = new Request(c.req.raw, {
-    headers: { ...Object.fromEntries(c.req.raw.headers.entries()), 'X-Client-Id': clientId }
+    headers: { ...Object.fromEntries(c.req.raw.headers.entries()), 'X-Client-Id': clientId, 'X-Provided-Id': providedClientId ?? '' }
   });
   return await stub.fetch(newReq);
 });

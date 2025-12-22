@@ -1,12 +1,24 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { Menu, X } from 'lucide-svelte';
 
 	let isMobileMenuOpen = $state(false);
+	let stars = $state(0);
 
 	const navLinks = [
 		{ name: 'FEATURES', href: '#features' },
 		{ name: 'HOW_TO', href: '#how-it-works' },
 	];
+
+	onMount(async () => {
+		try {
+			const res = await fetch('https://api.github.com/repos/abdulmumin1/onlocal');
+			const data = await res.json();
+			stars = data.stargazers_count;
+		} catch (e) {
+			console.error('Failed to fetch star count');
+		}
+	});
 </script>
 
 <nav class="fixed top-0 left-0 right-0 z-50 bg-stone-900 border-b border-white/20 font-mono text-sm">
@@ -41,7 +53,7 @@
 					rel="noopener noreferrer"
 					class="border border-stone-600 bg-black text-white hover:bg-white hover:text-black px-4 py-1 transition-all"
 				>
-					★ STAR_ON_GITHUB
+					★ STAR_ON_GITHUB {#if stars > 0}({stars}){/if}
 				</a>
 			</div>
 
@@ -65,6 +77,14 @@
 	{#if isMobileMenuOpen}
 		<div class="md:hidden bg-black border-b border-white/20">
 			<div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+				<a
+					href="https://github.com/abdulmumin1/onlocal"
+					target="_blank"
+					rel="noopener noreferrer"
+					class="border border-stone-600 bg-black text-white hover:bg-white hover:text-black px-4 py-2 block text-center font-mono text-sm"
+				>
+					★ STAR_ON_GITHUB {#if stars > 0}({stars}){/if}
+				</a>
 				{#each navLinks as link}
 					<a
 						href={link.href}

@@ -91,18 +91,17 @@ class tunnelClient {
     let requestQueue: (() => void)[] = [];
 
     ws.onopen = () => {
-      if (this.backoffDelay > 1000 && this.isRetry) {
+      if (this.isRetry) {
         this.backoffDelay = 1000;
         return;
       }
 
       console.log(
-        `${colors.green}✓ Connected to proxy, proxying to localhost:${port}${colors.reset}`
+        `${colors.green} ✓ Connected to proxy, proxying to localhost:${port}${colors.reset}`
       );
     };
 
     const processRequest = async (req: RequestMessage) => {
-      this.activeRequests++;
       try {
         const url = new URL(req.url);
         const targetUrl = `http://localhost:${port}${url.pathname}${url.search}`;
@@ -123,6 +122,20 @@ class tunnelClient {
         );
         const contentType = res.headers.get("content-type") || "";
         let body: { type: "text" | "binary"; data: string };
+
+        if (req.headers.Upgrade) {
+          // Reject unsupported upgrades, including WebSockets
+          const responseData: ResponseMessage = {
+            type: "response",
+            id: req.id,
+            status: 501,
+            headers: {},
+            body: { type: "text", data: "Protocol not supported" },
+          };
+          ws.send(JSON.stringify(responseData));
+          return;
+        }
+
         if (
           contentType.startsWith("text/") ||
           contentType.includes("json") ||
@@ -145,13 +158,7 @@ class tunnelClient {
           body,
         };
         ws.send(JSON.stringify(responseData));
-      } finally {
-        this.activeRequests--;
-        if (requestQueue.length > 0) {
-          const next = requestQueue.shift()!;
-          next();
-        }
-      }
+      } catch {}
     };
 
     ws.onmessage = async (event) => {
@@ -166,12 +173,11 @@ class tunnelClient {
           }
         } else if (data.type === "tunnel") {
           const tunnel = data as TunnelMessage;
-          const host  = new URL(tunnel.url).host;
+          const host = new URL(tunnel.url).host;
           const subdomainMatch = host.match(
             new RegExp(`^([a-z0-9]+)\\.${domain.replace(/\./g, "\\.")}`)
           );
 
-          
           if (subdomainMatch) {
             this.clientId = subdomainMatch[1] ?? "";
           }
@@ -211,7 +217,7 @@ class tunnelClient {
     };
 
     ws.onerror = (error) => {
-      this.reconnect();   
+      this.reconnect();
       console.error(`${colors.red} WebSocket error:${colors.reset}`, error);
     };
   }
@@ -219,5 +225,6 @@ class tunnelClient {
 
 // 'https://onlocal.dev/ws'
 
-let tunnel = new tunnelClient({ TUNNEL_DOMAIN: "wss://onlocal.dev" });
+let tunnel = new tunnelClient();
 tunnel.createWebSocket();
+// { TUNNEL_DOMAIN: "wss://onlocal.dev" }

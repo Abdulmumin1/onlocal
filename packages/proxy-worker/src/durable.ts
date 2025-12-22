@@ -22,6 +22,8 @@ export class TunnelDO extends DurableObject<Env> {
     }
   >;
   clientId: string | null = null;
+  pingInterval: NodeJS.Timeout | null = null;
+  pongTimeout: NodeJS.Timeout | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -50,12 +52,20 @@ export class TunnelDO extends DurableObject<Env> {
     await this.initialize();
 
     const upgradeHeader = request.headers.get("Upgrade");
+    const reconnectHeader = request.headers.get("X-Provided-Id")
     if (upgradeHeader === "websocket") {
       const webSocketPair = new WebSocketPair();
       const client = webSocketPair[0];
       const server = webSocketPair[1];
 
-      server.accept();
+      // console.log("\n\n\n\n\n\n\n", "here is a client id", this.clientId, '\n\n\n\n\n\n');
+
+      if (this.clientId && !reconnectHeader) {
+        // Reject unsupported protocol upgrades, including WebSockets
+        return new Response("Protocol not supported", { status: 501 });
+      }
+
+      this.ctx.acceptWebSocket(server);
       this.handleWebSocket(server, request);
 
       return new Response(null, {
@@ -109,6 +119,84 @@ export class TunnelDO extends DurableObject<Env> {
     }).catch(() => new Response("Timeout", { status: 504 }));
   }
 
+  async webSocketMessage(ws: WebSocket, message: string) {
+    try {
+      const data: WSMessage = JSON.parse(message);
+      console.log("WS message:", data.type, (data as any)?.id);
+      if (data?.type === "response") {
+        try {
+          const resMsg = data as ResponseMessage;
+          const pending = this.pendingRequests.get(resMsg.id);
+          if (pending) {
+            this.pendingRequests.delete(resMsg.id);
+            let body: string | Uint8Array;
+            console.log(resMsg);
+            if (resMsg.body.type === "binary") {
+              try {
+                const binaryString = atob(resMsg.body.data);
+                body = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                  body[i] = binaryString.charCodeAt(i);
+                }
+              } catch (e) {
+                console.error("Invalid base64 in response body:", e);
+                body = new Uint8Array(0);
+              }
+            } else {
+              body = resMsg.body.data;
+            }
+            const response = new Response(body, {
+              status: resMsg.status,
+              headers: resMsg.headers,
+            });
+            console.log("Resolving request:", resMsg.id);
+            pending.resolve(response);
+          } else {
+            console.log("No pending request for:", resMsg.id);
+          }
+        } catch (e) {
+          console.error("Error processing response message:", e);
+        }
+      } else if (data.type === "ping") {
+        ws.send(JSON.stringify({ type: "pong" }));
+        console.log("Sent pong to client");
+      } else if (data.type === "pong") {
+        // Received pong from client, keepalive ok
+        console.log("Received pong from client");
+        if (this.pongTimeout) {
+          clearTimeout(this.pongTimeout);
+          this.pongTimeout = null;
+        }
+      }
+    } catch (e) {
+      console.error("Invalid message:", message);
+    }
+  }
+
+  async webSocketClose(
+    ws: WebSocket,
+    code: number,
+    reason: string,
+    wasClean: Boolean
+  ) {
+    // If the client closes the connection, the runtime will invoke the webSocketClose() handler.
+    console.log(
+      `Client ${this.clientId} disconnected, code: ${code}, reason: ${reason}`
+    );
+    if (this.pingInterval) clearInterval(this.pingInterval);
+    if (this.pongTimeout) clearTimeout(this.pongTimeout);
+
+    // if (event.code === 1000) {
+    //   this.clients.delete(this.clientId as string);
+    //   this.env.TUNNEL_KV.delete(this.clientId as string);
+    // }
+    // Reject pending
+    for (const [id, { reject }] of this.pendingRequests) {
+      reject(new Error("Client disconnected"));
+    }
+    this.pendingRequests.clear();
+  }
+
   async handleWebSocket(ws: WebSocket, request: Request) {
     if (!this.clientId) {
       this.clientId =
@@ -133,90 +221,16 @@ export class TunnelDO extends DurableObject<Env> {
     };
     ws.send(JSON.stringify(tunnelMessage));
 
-    let pingInterval: NodeJS.Timeout | null = null;
-    let pongTimeout: NodeJS.Timeout | null = null;
-
     const startKeepalive = () => {
-      pingInterval = setInterval(() => {
+      this.pingInterval = setInterval(() => {
         ws.send(JSON.stringify({ type: "ping" }));
-        pongTimeout = setTimeout(() => {
+        this.pongTimeout = setTimeout(() => {
           console.log("No pong received from client, closing connection");
-          ws.close();
+          // ws.close();
         }, 10000);
       }, 30000);
     };
 
     startKeepalive();
-
-    ws.addEventListener("message", (event) => {
-      try {
-        const data: WSMessage = JSON.parse(event.data as string);
-        console.log("WS message:", data.type, (data as any)?.id);
-        if (data?.type === "response") {
-          try {
-            const resMsg = data as ResponseMessage;
-            const pending = this.pendingRequests.get(resMsg.id);
-            if (pending) {
-              this.pendingRequests.delete(resMsg.id);
-              let body: string | Uint8Array;
-              if (resMsg.body.type === "binary") {
-                try {
-                  const binaryString = atob(resMsg.body.data);
-                  body = new Uint8Array(binaryString.length);
-                  for (let i = 0; i < binaryString.length; i++) {
-                    body[i] = binaryString.charCodeAt(i);
-                  }
-                } catch (e) {
-                  console.error("Invalid base64 in response body:", e);
-                  body = new Uint8Array(0);
-                }
-              } else {
-                body = resMsg.body.data;
-              }
-              const response = new Response(body, {
-                status: resMsg.status,
-                headers: resMsg.headers,
-              });
-              console.log("Resolving request:", resMsg.id);
-              pending.resolve(response);
-            } else {
-              console.log("No pending request for:", resMsg.id);
-            }
-          } catch (e) {
-            console.error("Error processing response message:", e);
-          }
-        } else if (data.type === "ping") {
-          ws.send(JSON.stringify({ type: "pong" }));
-          console.log("Sent pong to client");
-        } else if (data.type === "pong") {
-          // Received pong from client, keepalive ok
-          console.log("Received pong from client");
-          if (pongTimeout) {
-            clearTimeout(pongTimeout);
-            pongTimeout = null;
-          }
-        }
-      } catch (e) {
-        console.error("Invalid message:", event.data);
-      }
-    });
-
-    ws.addEventListener("close", (event) => {
-      console.log(
-        `Client ${this.clientId} disconnected, code: ${event.code}, reason: ${event.reason}`
-      );
-      if (pingInterval) clearInterval(pingInterval);
-      if (pongTimeout) clearTimeout(pongTimeout);
-
-      // if (event.code === 1000) {
-      //   this.clients.delete(this.clientId as string);
-      //   this.env.TUNNEL_KV.delete(this.clientId as string);
-      // }
-      // Reject pending
-      for (const [id, { reject }] of this.pendingRequests) {
-        reject(new Error("Client disconnected"));
-      }
-      this.pendingRequests.clear();
-    });
   }
 }

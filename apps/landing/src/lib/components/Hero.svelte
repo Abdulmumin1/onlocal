@@ -47,7 +47,7 @@
 						class="group cursor-pointer px-6 py-4 border border-stone-700 bg-black hover:border-stone-500 text-stone-300 font-mono text-sm flex items-center gap-3 w-full sm:w-auto transition-all"
 					>
 						<span class="text-(--color-primary)">$</span>
-						<span>bunx onlocal 3000</span>
+						<span class="text-(--color-primary)">bunx</span> onlocal 3000
 						{#if copied}
 							<Check size={16} class="text-(--color-primary-light)" />
 						{:else}
