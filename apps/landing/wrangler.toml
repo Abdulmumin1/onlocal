@@ -7,8 +7,3 @@ compatibility_flags = ["nodejs_compat_v2"]
 
 [vars]
 NODE_VERSION=22
-
-
-[[routes]]
-pattern = "onlocal.dev"
-custom_domain = true

@@ -58,7 +58,6 @@ export class TunnelDO extends DurableObject<Env> {
       const client = webSocketPair[0];
       const server = webSocketPair[1];
 
-      // console.log("\n\n\n\n\n\n\n", "here is a client id", this.clientId, '\n\n\n\n\n\n');
 
       if (this.clientId && !reconnectHeader) {
         // Reject unsupported protocol upgrades, including WebSockets
