@@ -47,7 +47,7 @@
       "routes": [
         { "pattern": "onlocal.dev/ws", "zone_name": "onlocal.dev" },
         { "pattern": "*.onlocal.dev/*", "zone_name": "onlocal.dev" },
-        { "pattern": "onlocal.dev", "zone_name": "onlocal.dev" }
+        { "pattern": "onlocal.dev", "custom_domain": true }
       ]
     }
   },
