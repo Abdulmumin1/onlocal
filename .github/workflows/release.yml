@@ -24,8 +24,20 @@ jobs:
         with:
           bun-version: latest
 
+      # Setup Node.js with registry-url for OIDC authentication
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
       - name: Install Dependencies
         run: bun install
+
+      # Build the package BEFORE publishing so dist/index.js exists
+      - name: Build Packages
+        run: |
+          cd packages/onlocal
+          bun run build
 
       - name: Create Release Pull Request or Publish
         id: changesets
@@ -35,6 +47,7 @@ jobs:
           publish: bun run release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # OIDC will be used automatically with registry-url set above
 
       - name: Build Binaries
         if: steps.changesets.outputs.published == 'true'
