@@ -46,16 +46,12 @@ jobs:
         if: steps.changesets.outputs.published == 'true'
         id: get_version
         run: |
-          # Parse the first published package version
-          # Assuming onlocal is the main package or we just grab the first one
+          # Parse the published package version for onlocal
           PUBLISHED_PACKAGES='${{ steps.changesets.outputs.publishedPackages }}'
-          VERSION=$(echo $PUBLISHED_PACKAGES | jq -r '.[0].version')
+          VERSION=$(echo $PUBLISHED_PACKAGES | jq -r '.[] | select(.name == "onlocal") | .version')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           
-          # Construct tag name. Changesets default is package@version if multiple packages, or vVersion if fixed?
-          # We'll try to guess or use the logic. 
-          # For now, let's assume we want to upload to the tag that matches the version.
-          # If changesets created the tag, it is usually `onlocal@<version>` for mono-repos.
+          # Construct tag name.
           echo "tag=onlocal@$VERSION" >> $GITHUB_OUTPUT
 
       - name: Upload Release Assets
