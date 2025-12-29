@@ -225,11 +225,8 @@ export class TunnelDO extends DurableObject<Env> {
         ws.send(JSON.stringify({ type: "ping" }));
         this.pongTimeout = setTimeout(() => {
           console.log("No pong received from client, closing connection");
-          // ws.close();
         }, 10000);
       }, 30000);
     };
-
-    startKeepalive();
   }
 }

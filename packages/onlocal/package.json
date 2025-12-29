@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "bun index.ts",
-    "build":"bun build ./index.ts --outdir ./dist --target node"
+    "build": "bun build ./index.ts --outdir ./dist --target node",
+    "build:bin": "bun scripts/build-bin.ts"
   },
   "bin": {
     "onlocal": "dist/index.js"
