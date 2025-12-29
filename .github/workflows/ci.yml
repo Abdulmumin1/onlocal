@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install Dependencies
+        run: bun install
+
+      - name: Build Packages
+        run: |
+          cd packages/onlocal 
+          bun run build
+          bun run build:bin

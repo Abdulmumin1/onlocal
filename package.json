@@ -1,5 +1,16 @@
 {
   "name": "onlocal-project",
   "version": "1.0.0",
-  "workspaces": ["packages/*", "apps/*"]
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "devDependencies": {
+    "@changesets/cli": "^2.29.8"
+  },
+  "scripts": {
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "changeset publish"
+  }
 }
