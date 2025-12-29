@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install Dependencies
+        run: bun install
+
+      - name: Create Release Pull Request or Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          # Expects 'release' script in root package.json: "release": "changeset publish"
+          publish: bun run release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Binaries
+        if: steps.changesets.outputs.published == 'true'
+        run: |
+          cd packages/onlocal
+          bun run build:bin
+
+      - name: Get Released Version
+        if: steps.changesets.outputs.published == 'true'
+        id: get_version
+        run: |
+          # Parse the first published package version
+          # Assuming onlocal is the main package or we just grab the first one
+          PUBLISHED_PACKAGES='${{ steps.changesets.outputs.publishedPackages }}'
+          VERSION=$(echo $PUBLISHED_PACKAGES | jq -r '.[0].version')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Construct tag name. Changesets default is package@version if multiple packages, or vVersion if fixed?
+          # We'll try to guess or use the logic. 
+          # For now, let's assume we want to upload to the tag that matches the version.
+          # If changesets created the tag, it is usually `onlocal@<version>` for mono-repos.
+          echo "tag=onlocal@$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Upload Release Assets
+        if: steps.changesets.outputs.published == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: packages/onlocal/dist/bin/*
+          tag_name: ${{ steps.get_version.outputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
