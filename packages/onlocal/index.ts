@@ -37,12 +37,43 @@ const colors = {
   gray: "\x1b[90m",
   yellow: "\x1b[33m",
   red: "\x1b[31m",
+  bold: "\x1b[1m",
+  dim: "\x1b[2m",
   reset: "\x1b[0m",
 };
 
-const port = parseInt(process.argv[2] as string);
+function showHelp() {
+  console.log(`
+${colors.bold}${colors.cyan}  ┌─────────────────────────────────────┐
+  │            onlocal                  │
+  │   Expose localhost to the internet  │
+  └─────────────────────────────────────┘${colors.reset}
+
+${colors.bold}USAGE${colors.reset}
+  ${colors.dim}$${colors.reset} onlocal ${colors.yellow}<port>${colors.reset}
+
+${colors.bold}ARGUMENTS${colors.reset}
+  ${colors.yellow}<port>${colors.reset}    Local port to expose ${colors.dim}(required)${colors.reset}
+
+${colors.bold}EXAMPLES${colors.reset}
+  ${colors.dim}$${colors.reset} onlocal 3000        ${colors.dim}# Expose localhost:3000${colors.reset}
+  ${colors.dim}$${colors.reset} onlocal 8080        ${colors.dim}# Expose localhost:8080${colors.reset}
+
+${colors.bold}MORE INFO${colors.reset}
+  ${colors.dim}https://onlocal.dev${colors.reset}
+`);
+}
+
+const arg = process.argv[2];
+
+if (arg === "-h" || arg === "--help") {
+  showHelp();
+  process.exit(0);
+}
+
+const port = parseInt(arg as string);
 if (!port || isNaN(port)) {
-  console.log(`${colors.cyan}Usage: bun index.ts <port>${colors.reset}`);
+  showHelp();
   process.exit(1);
 }
 

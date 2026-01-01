@@ -64,6 +64,10 @@ app.all('*', async (c) => {
 
   console.log('Host:', host, 'Path:', url.pathname, 'ClientId:', clientId);
   if (!clientId) {
+    // Serve install script from root domain
+    if (url.pathname === '/install.sh') {
+      return c.redirect('https://raw.githubusercontent.com/Abdulmumin1/onlocal/main/install.sh', 302);
+    }
     return c.redirect('https://onlocal.pages.dev', 302);
   }
 
