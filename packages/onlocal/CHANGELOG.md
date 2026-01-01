@@ -1,5 +1,11 @@
 # onlocal
 
+## 0.2.0
+
+### Minor Changes
+
+- 2c2d6b7: Removed pinging client to keep connection alive, allows for proper DO hibernation
+
 ## 0.1.0
 
 ### Minor Changes
