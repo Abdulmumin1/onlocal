@@ -1,5 +1,11 @@
 # onlocal
 
+## 0.3.0
+
+### Minor Changes
+
+- c77387a: Added proper install.sh and updated --help for onlocal cli
+
 ## 0.2.0
 
 ### Minor Changes
