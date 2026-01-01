@@ -35,10 +35,9 @@
 				"HTTP    : http://localhost:3000",
 				"HTTPS   : https://lucky-panda.onlocal.dev",
 				"----------------------------------------",
-				"Ready to accept connections."
 			];
 
-			lines = [lines[0]]; // Keep command
+			lines = [lines[0]];
 
 			for (const line of output) {
 				lines = [...lines, line];
