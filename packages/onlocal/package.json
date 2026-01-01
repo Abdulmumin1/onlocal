@@ -3,6 +3,9 @@
   "name": "onlocal",
   "module": "index.ts",
   "type": "module",
+  "repository": {
+    "url": "https://github.com/Abdulmumin1/onlocal"
+  },
   "scripts": {
     "dev": "bun index.ts",
     "build": "bun build ./index.ts --outdir ./dist --target node",
