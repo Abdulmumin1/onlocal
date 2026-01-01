@@ -1,5 +1,11 @@
 # proxy-worker
 
+## 1.2.0
+
+### Minor Changes
+
+- c77387a: Added proper install.sh and updated --help for onlocal cli
+
 ## 1.1.0
 
 ### Minor Changes
