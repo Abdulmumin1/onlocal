@@ -1,5 +1,11 @@
 # onlocal
 
+## 0.4.1
+
+### Patch Changes
+
+- c75902c: patch: Change domain from in.onlocal.dev to onlocal.dev
+
 ## 0.4.0
 
 ### Minor Changes

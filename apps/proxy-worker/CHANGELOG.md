@@ -1,5 +1,11 @@
 # proxy-worker
 
+## 1.3.1
+
+### Patch Changes
+
+- c75902c: patch: Change domain from in.onlocal.dev to onlocal.dev
+
 ## 1.3.0
 
 ### Minor Changes
