@@ -424,6 +424,6 @@ class tunnelClient {
 
 // 'https://onlocal.dev/ws'
 
-const tunnelDomain = process.env.TUNNEL_DOMAIN || "wss://onlocal.dev";
+const tunnelDomain = process.env.TUNNEL_DOMAIN || "wss://in.onlocal.dev";
 let tunnel = new tunnelClient({ TUNNEL_DOMAIN: tunnelDomain });
 tunnel.createWebSocket();
