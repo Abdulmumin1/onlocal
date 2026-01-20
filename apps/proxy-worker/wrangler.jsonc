@@ -7,7 +7,7 @@
   //   "nodejs_compat"
   // ],
   "vars": {
-    "TUNNEL_DOMAIN": "in.onlocal.dev"
+    "TUNNEL_DOMAIN": "onlocal.dev"
   },
   "kv_namespaces": [
     {
@@ -45,8 +45,8 @@
   "env": {
     "production": {
       "routes": [
-        { "pattern": "in.onlocal.dev/ws", "zone_name": "onlocal.dev" },
-        { "pattern": "*.in.onlocal.dev/*", "zone_name": "onlocal.dev" },
+        { "pattern": "onlocal.dev/ws", "zone_name": "onlocal.dev" },
+        { "pattern": "*.onlocal.dev/*", "zone_name": "onlocal.dev" },
       ]
     }
   },
