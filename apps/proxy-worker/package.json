@@ -6,10 +6,13 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy --minify",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "test": "vitest"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.5.33",
     "@types/bun": "latest",
+    "vitest": "2.1.8",
     "wrangler": "^4.52.1"
   },
   "dependencies": {
