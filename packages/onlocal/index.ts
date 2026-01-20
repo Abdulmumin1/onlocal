@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 interface WSMessage {
-  type: "request" | "response" | "port" | "tunnel" | "ping" | "pong";
+  type: "request" | "response" | "port" | "tunnel" | "ping" | "pong" | "ws_open" | "ws_frame" | "ws_close";
 }
 
 interface RequestMessage extends WSMessage {
@@ -29,6 +29,28 @@ interface PortMessage extends WSMessage {
 interface TunnelMessage extends WSMessage {
   type: "tunnel";
   url: string;
+}
+
+// WebSocket passthrough messages
+interface WsOpenMessage extends WSMessage {
+  type: "ws_open";
+  streamId: string;
+  url: string;
+  headers: Record<string, string>;
+}
+
+interface WsFrameMessage extends WSMessage {
+  type: "ws_frame";
+  streamId: string;
+  data: string;
+  isBinary: boolean;
+}
+
+interface WsCloseMessage extends WSMessage {
+  type: "ws_close";
+  streamId: string;
+  code?: number;
+  reason?: string;
 }
 
 const colors = {
@@ -84,6 +106,8 @@ class tunnelClient {
   activeRequests: number = 0;
   backoffDelay: number = 1000;
   isRetry: boolean = false;
+  // Track local WebSocket connections for passthrough (streamId -> WebSocket)
+  localWsSockets: Map<string, WebSocket> = new Map();
 
   constructor(
     env: { TUNNEL_DOMAIN?: string } = { TUNNEL_DOMAIN: "ws://localhost:8787" }
@@ -154,19 +178,6 @@ class tunnelClient {
         const contentType = res.headers.get("content-type") || "";
         let body: { type: "text" | "binary"; data: string };
 
-        if (req.headers.Upgrade) {
-          // Reject unsupported upgrades, including WebSockets
-          const responseData: ResponseMessage = {
-            type: "response",
-            id: req.id,
-            status: 501,
-            headers: {},
-            body: { type: "text", data: "Protocol not supported" },
-          };
-          ws.send(JSON.stringify(responseData));
-          return;
-        }
-
         if (
           contentType.startsWith("text/") ||
           contentType.includes("json") ||
@@ -218,6 +229,18 @@ class tunnelClient {
               `${colors.yellow}🌐 Tunnel established: ${tunnel.url}${colors.reset}`
             );
           }
+        } else if (data.type === "ws_open") {
+          // Open WebSocket to localhost
+          const wsOpen = data as WsOpenMessage;
+          this.handleWsOpen(wsOpen, ws);
+        } else if (data.type === "ws_frame") {
+          // Forward frame to local WebSocket
+          const wsFrame = data as WsFrameMessage;
+          this.handleWsFrame(wsFrame);
+        } else if (data.type === "ws_close") {
+          // Close local WebSocket
+          const wsClose = data as WsCloseMessage;
+          this.handleWsClose(wsClose);
         } else if (data.type === "ping") {
           ws.send(JSON.stringify({ type: "pong" }));
         }
@@ -239,11 +262,20 @@ class tunnelClient {
     };
 
     ws.onclose = (event) => {
+      // Close all local WebSockets
+      for (const [streamId, localWs] of this.localWsSockets) {
+        try {
+          localWs.close(1001, "Tunnel disconnected");
+        } catch (e) {
+          // Ignore
+        }
+      }
+      this.localWsSockets.clear();
+
       if (!event.wasClean) {
         this.reconnect();
         return;
       }
-      // this.createWebSocket();
       console.log(`${colors.yellow} Disconnected from proxy${colors.reset}`);
     };
 
@@ -252,10 +284,146 @@ class tunnelClient {
       console.error(`${colors.red} WebSocket error:${colors.reset}`, error);
     };
   }
+
+  // Handle ws_open: open WebSocket to localhost
+  handleWsOpen(msg: WsOpenMessage, controlWs: WebSocket) {
+    const url = new URL(msg.url);
+    const wsUrl = `ws://localhost:${port}${url.pathname}${url.search}`;
+
+    console.log(
+      `${colors.cyan}[WS] ${colors.green}OPEN${colors.reset} ${colors.gray}[${url.pathname}]${colors.reset}`
+    );
+
+    try {
+      const localWs = new WebSocket(wsUrl);
+
+      localWs.onopen = () => {
+        this.localWsSockets.set(msg.streamId, localWs);
+        console.log(
+          `${colors.cyan}[WS] ${colors.green}CONNECTED${colors.reset} ${colors.gray}[streamId: ${msg.streamId}]${colors.reset}`
+        );
+      };
+
+      localWs.onmessage = (event) => {
+        // Forward message to proxy
+        let wsFrameMessage: WsFrameMessage;
+
+        if (event.data instanceof ArrayBuffer) {
+          // Binary message
+          const bytes = new Uint8Array(event.data);
+          wsFrameMessage = {
+            type: "ws_frame",
+            streamId: msg.streamId,
+            data: Buffer.from(bytes).toString("base64"),
+            isBinary: true,
+          };
+        } else if (event.data instanceof Blob) {
+          // Handle Blob asynchronously
+          event.data.arrayBuffer().then((buffer) => {
+            const blobFrameMessage: WsFrameMessage = {
+              type: "ws_frame",
+              streamId: msg.streamId,
+              data: Buffer.from(buffer).toString("base64"),
+              isBinary: true,
+            };
+            controlWs.send(JSON.stringify(blobFrameMessage));
+          });
+          return;
+        } else {
+          // Text message
+          wsFrameMessage = {
+            type: "ws_frame",
+            streamId: msg.streamId,
+            data: event.data,
+            isBinary: false,
+          };
+        }
+
+        controlWs.send(JSON.stringify(wsFrameMessage));
+      };
+
+      localWs.onclose = (event) => {
+        console.log(
+          `${colors.cyan}[WS] ${colors.yellow}CLOSED${colors.reset} ${colors.gray}[streamId: ${msg.streamId}]${colors.reset}`
+        );
+        this.localWsSockets.delete(msg.streamId);
+
+        // Notify proxy
+        const wsCloseMessage: WsCloseMessage = {
+          type: "ws_close",
+          streamId: msg.streamId,
+          code: event.code,
+          reason: event.reason,
+        };
+        controlWs.send(JSON.stringify(wsCloseMessage));
+      };
+
+      localWs.onerror = (error) => {
+        console.error(
+          `${colors.red}[WS] Error for streamId ${msg.streamId}:${colors.reset}`,
+          error
+        );
+        this.localWsSockets.delete(msg.streamId);
+
+        // Notify proxy of close
+        const wsCloseMessage: WsCloseMessage = {
+          type: "ws_close",
+          streamId: msg.streamId,
+          code: 1011,
+          reason: "Local WebSocket error",
+        };
+        controlWs.send(JSON.stringify(wsCloseMessage));
+      };
+    } catch (e) {
+      console.error(
+        `${colors.red}[WS] Failed to connect to localhost:${port}${colors.reset}`,
+        e
+      );
+      // Notify proxy of failure
+      const wsCloseMessage: WsCloseMessage = {
+        type: "ws_close",
+        streamId: msg.streamId,
+        code: 1011,
+        reason: "Failed to connect to local server",
+      };
+      controlWs.send(JSON.stringify(wsCloseMessage));
+    }
+  }
+
+  // Handle ws_frame: forward frame to local WebSocket
+  handleWsFrame(msg: WsFrameMessage) {
+    const localWs = this.localWsSockets.get(msg.streamId);
+    if (!localWs) {
+      console.log(
+        `${colors.yellow}[WS] No local socket for streamId: ${msg.streamId}${colors.reset}`
+      );
+      return;
+    }
+
+    if (msg.isBinary) {
+      // Decode base64 to binary
+      const buffer = Buffer.from(msg.data, "base64");
+      localWs.send(buffer);
+    } else {
+      localWs.send(msg.data);
+    }
+  }
+
+  // Handle ws_close: close local WebSocket
+  handleWsClose(msg: WsCloseMessage) {
+    const localWs = this.localWsSockets.get(msg.streamId);
+    if (localWs) {
+      localWs.close(msg.code || 1000, msg.reason || "");
+      this.localWsSockets.delete(msg.streamId);
+      console.log(
+        `${colors.cyan}[WS] ${colors.yellow}CLOSED${colors.reset} ${colors.gray}[streamId: ${msg.streamId}]${colors.reset}`
+      );
+    }
+  }
 }
 
 // 'https://onlocal.dev/ws'
 
-let tunnel = new tunnelClient({ TUNNEL_DOMAIN: "wss://onlocal.dev" });
+const tunnelDomain = process.env.TUNNEL_DOMAIN || "wss://onlocal.dev";
+let tunnel = new tunnelClient({ TUNNEL_DOMAIN: tunnelDomain });
 tunnel.createWebSocket();
-// { TUNNEL_DOMAIN: "wss://onlocal.dev" }

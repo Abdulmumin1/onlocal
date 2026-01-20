@@ -1,5 +1,5 @@
 export interface WSMessage {
-  type: 'request' | 'response' | 'port' | 'tunnel' | 'ping' | 'pong';
+  type: 'request' | 'response' | 'port' | 'tunnel' | 'ping' | 'pong' | 'ws_open' | 'ws_frame' | 'ws_close';
 }
 
 export interface RequestMessage extends WSMessage {
@@ -27,5 +27,27 @@ export interface PortMessage extends WSMessage {
 export interface TunnelMessage extends WSMessage {
   type: 'tunnel';
   url: string;
+}
+
+// WebSocket passthrough messages
+export interface WsOpenMessage extends WSMessage {
+  type: 'ws_open';
+  streamId: string;
+  url: string;
+  headers: Record<string, string>;
+}
+
+export interface WsFrameMessage extends WSMessage {
+  type: 'ws_frame';
+  streamId: string;
+  data: string;  // text data or base64 encoded binary
+  isBinary: boolean;
+}
+
+export interface WsCloseMessage extends WSMessage {
+  type: 'ws_close';
+  streamId: string;
+  code?: number;
+  reason?: string;
 }
 
