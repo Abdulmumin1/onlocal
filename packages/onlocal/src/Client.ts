@@ -86,10 +86,7 @@ export class TunnelClient {
         return;
       }
 
-      console.log(renderBox("Connected", [
-        `Proxying to ${colors.bold}localhost:${this.port}${colors.reset}`,
-        `Tunnel: ${colors.yellow}${colors.bold}...${colors.reset}`,
-      ], "Press 'r' to force reconnect"));
+      console.log(`${colors.green}✓${colors.reset} Connected to proxy, proxying to ${colors.bold}localhost:${this.port}${colors.reset}`);
     };
 
     const processRequest = async (req: RequestMessage) => {
