@@ -108,6 +108,10 @@ if (arg === "config") {
             if (key.name === "r") {
                 tunnel.forceReconnect();
             }
+            if (key.name === "q" || key.name === "escape") {
+                console.log(`${colors.gray}Goodbye!${colors.reset}`);
+                process.exit(0);
+            }
         });
     }
 }
