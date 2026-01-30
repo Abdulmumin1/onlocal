@@ -6,18 +6,18 @@
   "repository": {
     "url": "https://github.com/Abdulmumin1/onlocal"
   },
-  "scripts": {
-    "dev": "bun index.ts",
-    "build": "bun build ./index.ts --outdir ./dist --target node",
-    "build:bin": "bun scripts/build-bin.ts"
-  },
   "bin": {
-    "onlocal": "dist/index.js"
+    "onlocal": "dist/cli.js"
   },
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "scripts": {
+    "dev": "bun src/cli.ts",
+    "build": "bun build ./src/cli.ts --outfile ./dist/cli.js --target node && bun build ./index.ts --outfile ./dist/index.js --target node",
+    "build:bin": "bun scripts/build-bin.ts"
   }
 }
