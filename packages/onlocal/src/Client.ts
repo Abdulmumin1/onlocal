@@ -64,9 +64,12 @@ export class TunnelClient {
     this.forcingReconnect = true;
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close();
+      console.log(`${colors.yellow}⟳ Connected...${colors.reset}`);
     } else {
       this.forcingReconnect = false;
       this.createWebSocket();
+      console.log(`${colors.yellow}⟳ Connected...${colors.reset}`);
+
     }
   }
 
@@ -86,7 +89,7 @@ export class TunnelClient {
         return;
       }
 
-      console.log(`${colors.green}✓${colors.reset} Connected to proxy, proxying to ${colors.bold}localhost:${this.port}${colors.reset}`);
+      console.log(`${colors.yellow}✓${colors.reset} Connected to proxy, proxying to ${colors.bold}localhost:${this.port}${colors.reset}`);
     };
 
     const processRequest = async (req: RequestMessage) => {
@@ -162,9 +165,7 @@ export class TunnelClient {
 
           if (!this.isRetry) {
             console.log(renderBox("Tunnel Established", [
-              `${colors.green}Your URL is ready!`,
-              ``,
-              `${colors.bold}${tunnel.url}${colors.reset}`,
+              `${colors.bold}${colors.yellow}${tunnel.url}${colors.reset}`,
             ], "Press 'r' to force reconnect"));
           }
         } else if (data.type === "ws_open") {
