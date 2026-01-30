@@ -6,8 +6,16 @@ Expose your localhost to the internet. A simple, self-hostable tunneling solutio
 
 ### Quick Install (Recommended)
 
+**macOS / Linux**
+
 ```bash
 curl -fsSL https://onlocal.dev/install.sh | bash
+```
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/Abdulmumin1/onlocal/main/install.ps1 | iex
 ```
 
 This downloads the appropriate binary for your platform and adds it to your PATH.
@@ -43,6 +51,16 @@ onlocal 3000
 ```
 
 This exposes `localhost:3000` and gives you a public URL like `https://abc123.onlocal.dev`.
+
+### Configuration
+
+You can configure the default behavior (e.g., self-hosted tunnel URL) using:
+
+```bash
+onlocal config
+```
+
+This will open an interactive setup to save your preferences to `~/.onlocal/config.yml`.
 
 ## How It Works
 
