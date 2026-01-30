@@ -52,6 +52,16 @@ onlocal 3000
 
 This exposes `localhost:3000` and gives you a public URL like `https://abc123.onlocal.dev`.
 
+### Configuration
+
+You can configure the default behavior (e.g., self-hosted tunnel URL) using:
+
+```bash
+onlocal config
+```
+
+This will open an interactive setup to save your preferences to `~/.onlocal/config.yml`.
+
 ## How It Works
 
 onlocal consists of two components:

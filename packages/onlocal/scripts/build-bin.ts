@@ -17,7 +17,7 @@ console.log("Building binaries...");
 for (const { target, suffix } of targets) {
   const outfile = `dist/bin/onlocal-${suffix}`;
   console.log(`Building for ${target}...`);
-  await $`bun build ./index.ts --compile --target ${target} --outfile ${outfile}`;
+  await $`bun build ./src/cli.ts --compile --target ${target} --outfile ${outfile}`;
 }
 
 console.log("Build complete!");
