@@ -159,7 +159,7 @@ export class TunnelClient {
 
           if (!this.isRetry) {
             console.log(
-              `${colors.yellow}🌐 Tunnel established: ${tunnel.url}${colors.reset}`
+              `${colors.yellow}🌐 Tunnel established: ${colors.reset}${colors.bold}${tunnel.url}${colors.reset}`
             );
           }
         } else if (data.type === "ws_open") {
