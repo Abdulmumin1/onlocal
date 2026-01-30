@@ -1,5 +1,15 @@
 # onlocal
 
+## 0.5.0
+
+### Minor Changes
+
+- e8ce758: feat: add configuration management with `onlocal config` command
+
+### Patch Changes
+
+- 8faf3b7: refactor: expose TunnelClient for programmatic usage, add force reconnect (r key) to CLI, and add PowerShell install script for Windows
+
 ## 0.4.1
 
 ### Patch Changes
