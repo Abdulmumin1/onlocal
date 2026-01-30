@@ -3,14 +3,11 @@ import { TunnelClient } from "./Client";
 import * as readline from "readline";
 import { intro, text, outro, spinner } from "@clack/prompts";
 import { loadConfig, saveConfig, CONFIG_PATH } from "./config";
+import { renderLogo, renderBox } from "./ui";
 
 function showHelp() {
+  console.log(renderLogo());
   console.log(`
-${colors.bold}${colors.cyan}  ┌─────────────────────────────────────┐
-  │            onlocal                  │
-  │   Expose localhost to the internet  │
-  └─────────────────────────────────────┘${colors.reset}
-
 ${colors.bold}USAGE${colors.reset}
   ${colors.dim}$${colors.reset} onlocal ${colors.yellow}<port>${colors.reset}
   ${colors.dim}$${colors.reset} onlocal config      ${colors.dim}# Configure settings${colors.reset}
@@ -93,6 +90,10 @@ if (arg === "config") {
 
     const tunnelDomain = process.env.TUNNEL_DOMAIN || config.tunnel.domain || "wss://onlocal.dev";
     
+    console.clear();
+    console.log(renderLogo());
+    console.log(""); // spacer
+
     let tunnel = new TunnelClient({ port, domain: tunnelDomain });
     tunnel.start();
 

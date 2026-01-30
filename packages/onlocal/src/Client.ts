@@ -1,4 +1,5 @@
 import { colors } from "./utils";
+import { renderLogo, renderBox } from "./ui";
 import type {
   WSMessage,
   RequestMessage,
@@ -85,9 +86,10 @@ export class TunnelClient {
         return;
       }
 
-      console.log(
-        `${colors.green} ✓ Connected to proxy, proxying to localhost:${this.port}${colors.reset}`
-      );
+      console.log(renderBox("Connected", [
+        `Proxying to ${colors.bold}localhost:${this.port}${colors.reset}`,
+        `Tunnel: ${colors.yellow}${colors.bold}...${colors.reset}`,
+      ], "Press 'r' to force reconnect"));
     };
 
     const processRequest = async (req: RequestMessage) => {
@@ -105,8 +107,12 @@ export class TunnelClient {
             : res.status >= 400
             ? "red"
             : "yellow";
+            
+        const methodColor = colors.cyan;
+        
+        // Log the request in a compact way
         console.log(
-          `${colors.cyan}[${req.method}] ${colors[statusColor as keyof typeof colors]}${res.status}${colors.reset} ${colors.gray}[${url.pathname}${url.search}]${colors.reset}`
+          `${methodColor}[${req.method}]${colors.reset} ${colors[statusColor as keyof typeof colors]}${res.status}${colors.reset} ${colors.gray}${url.pathname}${url.search}${colors.reset}`
         );
         const contentType = res.headers.get("content-type") || "";
         let body: { type: "text" | "binary"; data: string };
@@ -158,9 +164,11 @@ export class TunnelClient {
           }
 
           if (!this.isRetry) {
-            console.log(
-              `${colors.yellow}🌐 Tunnel established: ${colors.reset}${colors.bold}${tunnel.url}${colors.reset}`
-            );
+            console.log(renderBox("Tunnel Established", [
+              `${colors.green}Your URL is ready!`,
+              ``,
+              `${colors.bold}${tunnel.url}${colors.reset}`,
+            ], "Press 'r' to force reconnect"));
           }
         } else if (data.type === "ws_open") {
           const wsOpen = data as WsOpenMessage;
@@ -226,7 +234,7 @@ export class TunnelClient {
     const wsUrl = `ws://localhost:${this.port}${url.pathname}${url.search}`;
 
     console.log(
-      `${colors.cyan}[WS] ${colors.green}OPEN${colors.reset} ${colors.gray}[${url.pathname}]${colors.reset}`
+      `${colors.cyan}[WS] ${colors.green}OPEN${colors.reset} ${colors.gray}${url.pathname}${colors.reset}`
     );
 
     try {
