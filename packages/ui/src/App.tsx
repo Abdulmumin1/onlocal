@@ -29,9 +29,11 @@ function sanitizeTerminalOutput(input: string): string {
 export default function App() {
   const [inputPort, setInputPort] = useState<number>(3000);
   const [tunnels, setTunnels] = useState<Record<number, TunnelInstance>>({});
-  const [activeTab, setActiveTab] = useState<number | null>(null);
+  const [expandedLogs, setExpandedLogs] = useState<Record<number, boolean>>({});
 
-  const activeInstance = activeTab !== null ? tunnels[activeTab] : null;
+  const toggleLogs = (port: number) => {
+    setExpandedLogs(prev => ({ ...prev, [port]: !prev[port] }));
+  };
 
   const updateInstance = (port: number, patch: Partial<TunnelInstance> | ((prev: TunnelInstance) => TunnelInstance)) => {
     setTunnels(prev => {
@@ -59,7 +61,7 @@ export default function App() {
     };
 
     setTunnels(prev => ({ ...prev, [port]: newInstance }));
-    setActiveTab(port);
+    setExpandedLogs(prev => ({ ...prev, [port]: true }));
 
     try {
       const command = Command.create('onlocal', [String(port)]);
@@ -157,79 +159,87 @@ export default function App() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
-        <div className="card">
-          <div className="title">OnLocal</div>
-          <div className="sidebarTop">
-            <input
-              className="input"
-              aria-label="port"
-              type="number"
-              min={1}
-              max={65535}
-              value={inputPort}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setInputPort(Number(e.target.value))}
-            />
-            <button className="button" onClick={() => startTunnel(inputPort)}>
-              Open
-            </button>
-          </div>
+      <header className="header">
+        <div className="logo">ONLOCAL</div>
+        <div className="portInput">
+          <input
+            className="input"
+            aria-label="port"
+            type="number"
+            min={1}
+            max={65535}
+            value={inputPort}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setInputPort(Number(e.target.value))}
+          />
+          <button className="button primary" onClick={() => startTunnel(inputPort)}>
+            Connect
+          </button>
         </div>
+      </header>
 
-        <div className="card scrollable">
-          <div className="sectionTitle">Tunnels</div>
-          <div className="recentList">
-            {tunnelList.length === 0 ? (
-              <div className="muted">No active tunnels.</div>
-            ) : (
-              tunnelList.map((t) => (
-                <div 
-                  key={t.port} 
-                  className={`recentItem ${activeTab === t.port ? 'active' : ''}`}
-                  onClick={() => setActiveTab(t.port)}
-                >
-                  <div className="recentHeader">
-                    <div className="recentPort">:{t.port}</div>
-                    <div className={`statusDot ${t.status}`} title={t.status} />
+      <main className="mainContent">
+        <div className="sectionHeader">
+          <span className="sectionTitle">Recent Tunnels</span>
+        </div>
+        
+        <div className="tunnelList">
+          {tunnelList.length === 0 ? (
+            <div className="emptyState">
+              <div className="muted">No active tunnels</div>
+            </div>
+          ) : (
+            tunnelList.map((t) => (
+              <div key={t.port} className="tunnelCard">
+                <div className="tunnelHeader" onClick={() => toggleLogs(t.port)}>
+                  <div className="tunnelInfo">
+                    <div className={`statusDot ${t.status}`} />
+                    <div className="tunnelText">
+                      <span className="portLabel">:{t.port}</span>
+                      {t.url && (
+                        <span className="urlText">{t.url.replace('https://', '')}</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="recentUrl">{t.url || 'Initializing...'}</div>
-                  <div className="itemActions">
+                  <div className="tunnelActions" onClick={(e) => e.stopPropagation()}>
                     {t.url && (
-                      <button className="miniButton" onClick={(e) => { e.stopPropagation(); copyUrl(t.url); }}>Copy</button>
+                      <button className="iconButton" title="Open URL" onClick={() => openUrl(t.url)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+                      </button>
+                    )}
+                    {t.url && (
+                      <button className="iconButton" title="Copy URL" onClick={() => copyUrl(t.url)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      </button>
                     )}
                     {t.status === 'running' ? (
-                      <button className="miniButton danger" onClick={(e) => { e.stopPropagation(); stopTunnel(t.port); }}>Stop</button>
+                      <button className="iconButton danger" title="Stop" onClick={() => stopTunnel(t.port)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                      </button>
                     ) : (
-                      <button className="miniButton" onClick={(e) => { e.stopPropagation(); startTunnel(t.port); }}>Start</button>
+                      <button className="iconButton" title="Start" onClick={() => startTunnel(t.port)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 3l14 9-14 9V3z"/></svg>
+                      </button>
                     )}
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
-      </aside>
 
-      <main className="main">
-        <div className="logsHeader">
-          <div className="sectionTitle">
-            {activeInstance ? `Logs for :${activeInstance.port}` : 'Select a tunnel'}
-          </div>
-          {activeInstance && (
-            <button className="button secondary" onClick={() => updateInstance(activeInstance.port, { logs: [] })}>
-              Clear
-            </button>
-          )}
-        </div>
-        <div className="logs">
-          {!activeInstance ? (
-            <div className="muted">Select a tunnel from the sidebar to view logs.</div>
-          ) : activeInstance.logs.length === 0 ? (
-            <div className="muted">Waiting for logs...</div>
-          ) : (
-            activeInstance.logs.map((line: string, idx: number) => (
-              <div className="logLine" key={idx}>
-                {line}
+                {expandedLogs[t.port] && (
+                  <div className="tunnelLogsContainer">
+                    <div className="logsHeaderSmall">
+                      <span className="tinyTitle">Console</span>
+                      <button className="textButton" onClick={() => updateInstance(t.port, { logs: [] })}>Clear</button>
+                    </div>
+                    <div className="logs">
+                      {t.logs.length === 0 ? (
+                        <div className="muted">Waiting for activity...</div>
+                      ) : (
+                        t.logs.map((line, idx) => (
+                          <div className="logLine" key={idx}>{line}</div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             ))
           )}
