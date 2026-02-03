@@ -15,7 +15,7 @@ curl -fsSL https://onlocal.dev/install.sh | bash
 **Windows (PowerShell)**
 
 ```powershell
-irm https://raw.githubusercontent.com/Abdulmumin1/onlocal/main/install.ps1 | iex
+irm https://onlocal.dev/install.ps1 | iex
 ```
 
 This downloads the appropriate binary for your platform and adds it to your PATH.
