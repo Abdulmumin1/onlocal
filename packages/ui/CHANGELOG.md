@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.6
+
+### Patch Changes
+
+- af495be: - Initial Tauri + React desktop UI.
+- af495be: - Initial Tauri + React desktop UI :es
+
 ## 0.1.2
 
 ### Patch Changes
