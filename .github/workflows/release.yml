@@ -82,7 +82,6 @@ jobs:
   ui_bundles:
     name: UI Bundles (${{ matrix.platform }})
     needs: release
-    if: needs.release.outputs.published == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -126,28 +125,38 @@ jobs:
       - name: Get UI Released Version
         id: get_ui_version
         uses: actions/github-script@v7
-        env:
-          PUBLISHED_PACKAGES: ${{ needs.release.outputs.publishedPackages }}
         with:
           script: |
-            const published = process.env.PUBLISHED_PACKAGES
-            let packages
+            const fs = require('fs')
+            const path = require('path')
+
+            const pkgPath = path.join(process.env.GITHUB_WORKSPACE, 'packages', 'ui', 'package.json')
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+            const version = pkg && pkg.version
+
+            if (!version) {
+              core.setFailed('Could not read @onlocal/ui version from packages/ui/package.json')
+              return
+            }
+
+            const tag = `@onlocal/ui@${version}`
+            core.setOutput('version', version)
+            core.setOutput('tag', tag)
+
             try {
-              packages = JSON.parse(published || '[]')
-            } catch (e) {
-              core.setFailed(`Failed to parse publishedPackages JSON: ${e}`)
-              return
-            }
-
-            const ui = packages.find((p) => p && p.name === '@onlocal/ui')
-            if (!ui || !ui.version) {
+              await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag
+              })
               core.setOutput('ui_published', 'false')
-              return
+            } catch (e) {
+              if (e.status === 404) {
+                core.setOutput('ui_published', 'true')
+                return
+              }
+              throw e
             }
-
-            core.setOutput('ui_published', 'true')
-            core.setOutput('version', ui.version)
-            core.setOutput('tag', `@onlocal/ui@${ui.version}`)
 
       - name: Build UI
         if: steps.get_ui_version.outputs.ui_published == 'true'
