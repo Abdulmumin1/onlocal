@@ -12,7 +12,7 @@
     "ui:dev": "bun run --filter @onlocal/ui tauri dev",
     "ui:build": "bun run --filter @onlocal/ui tauri build",
     "ui:ci:frontend": "bun run --filter @onlocal/ui build",
-    "ui:ci:icon": "bun run --filter @onlocal/ui tauri icon ./src-tauri/icons/icon.png",
+    "ui:ci:icon": "bun run --filter @onlocal/ui tauri icon ./src-tauri/icons/icon.svg",
     "ui:ci:build": "bun run --filter @onlocal/ui tauri build",
     "ui:ci:bundle": "bun run ui:ci:icon && bun run ui:ci:build",
     "changeset": "changeset",
