@@ -6,6 +6,11 @@ out
 dist
 *.tgz
 
+# UI output
+packages/ui/dist/
+packages/ui/src-tauri/target/
+packages/ui/src-tauri/gen/
+
 # code coverage
 coverage
 *.lcov
@@ -33,3 +38,4 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Finder (MacOS) folder config
 .DS_Store
 implementation-plan.md
+writeup/

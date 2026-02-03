@@ -22,3 +22,6 @@ jobs:
           cd packages/onlocal 
           bun run build
           bun run build:bin
+
+      - name: Build UI Frontend
+        run: bun run ui:ci:frontend

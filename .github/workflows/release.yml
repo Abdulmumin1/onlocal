@@ -11,6 +11,9 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.changesets.outputs.published }}
+      publishedPackages: ${{ steps.changesets.outputs.publishedPackages }}
     permissions:
       contents: write
       id-token: write
@@ -73,5 +76,89 @@ jobs:
         with:
           files: packages/onlocal/dist/bin/*
           tag_name: ${{ steps.get_version.outputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  ui_bundles:
+    name: UI Bundles (${{ matrix.platform }})
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: macos
+          - os: windows-latest
+            platform: windows
+          - os: ubuntu-22.04
+            platform: linux
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            pkg-config \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libwebkit2gtk-4.1-dev
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Get UI Released Version
+        id: get_ui_version
+        uses: actions/github-script@v7
+        env:
+          PUBLISHED_PACKAGES: ${{ needs.release.outputs.publishedPackages }}
+        with:
+          script: |
+            const published = process.env.PUBLISHED_PACKAGES
+            let packages
+            try {
+              packages = JSON.parse(published || '[]')
+            } catch (e) {
+              core.setFailed(`Failed to parse publishedPackages JSON: ${e}`)
+              return
+            }
+
+            const ui = packages.find((p) => p && p.name === '@onlocal/ui')
+            if (!ui || !ui.version) {
+              core.setOutput('ui_published', 'false')
+              return
+            }
+
+            core.setOutput('ui_published', 'true')
+            core.setOutput('version', ui.version)
+            core.setOutput('tag', `@onlocal/ui@${ui.version}`)
+
+      - name: Build UI
+        if: steps.get_ui_version.outputs.ui_published == 'true'
+        run: bun run ui:ci:bundle
+
+      - name: Upload UI bundles
+        if: steps.get_ui_version.outputs.ui_published == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            packages/ui/src-tauri/target/release/bundle/**
+          tag_name: ${{ steps.get_ui_version.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
