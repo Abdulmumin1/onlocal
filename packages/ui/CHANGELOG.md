@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+### Patch Changes
+
+- c1903e0: - Initial Tauri + React desktop UI.
+
 ## 0.1.1
 
 ### Patch Changes
