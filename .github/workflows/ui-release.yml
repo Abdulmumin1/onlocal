@@ -1,14 +1,64 @@
 name: UI Release
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
+concurrency:
+  group: ui-release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  check_version:
+    name: Check UI Version
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check if UI version changed
+        id: check
+        run: |
+          # Get current version
+          CURRENT_VERSION=$(jq -r '.version' packages/ui/package.json)
+          
+          # Get previous version (from parent commit)
+          git show HEAD^:packages/ui/package.json > /tmp/prev_package.json 2>/dev/null || echo '{"version":"0.0.0"}' > /tmp/prev_package.json
+          PREV_VERSION=$(jq -r '.version' /tmp/prev_package.json)
+          
+          echo "Current version: $CURRENT_VERSION"
+          echo "Previous version: $PREV_VERSION"
+          
+          # For workflow_dispatch, always build
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual trigger - building"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            echo "tag=@onlocal/ui@$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          elif [ "$CURRENT_VERSION" != "$PREV_VERSION" ]; then
+            echo "UI version changed from $PREV_VERSION to $CURRENT_VERSION"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            echo "tag=@onlocal/ui@$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "UI version unchanged"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          fi
+
   build:
-    name: Build UI (${{ matrix.platform }})
+    name: Build (${{ matrix.platform }})
+    needs: check_version
+    if: needs.check_version.outputs.should_build == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - os: macos-latest
@@ -17,10 +67,6 @@ jobs:
             platform: windows
           - os: ubuntu-22.04
             platform: linux
-
-    permissions:
-      contents: write
-
     steps:
       - uses: actions/checkout@v4
 
@@ -51,10 +97,37 @@ jobs:
       - name: Build UI
         run: bun run ui:ci:bundle
 
-      - name: Upload UI bundles
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-${{ matrix.platform }}
+          path: packages/ui/src-tauri/target/release/bundle/**/*
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: [check_version, build]
+    if: needs.check_version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: ui-*
+          merge-multiple: false
+
+      - name: List artifacts
+        run: find artifacts -type f | head -50
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            packages/ui/src-tauri/target/release/bundle/**
+          tag_name: ${{ needs.check_version.outputs.tag }}
+          name: "OnLocal UI v${{ needs.check_version.outputs.version }}"
+          files: artifacts/**/*
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
