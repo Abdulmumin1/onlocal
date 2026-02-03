@@ -101,8 +101,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ui-${{ matrix.platform }}
-          path: packages/ui/src-tauri/target/release/bundle/**/*
-          if-no-files-found: error
+          path: |
+            packages/ui/src-tauri/target/release/bundle/dmg/*.dmg
+            packages/ui/src-tauri/target/release/bundle/nsis/*.exe
+            packages/ui/src-tauri/target/release/bundle/msi/*.msi
+            packages/ui/src-tauri/target/release/bundle/appimage/*.AppImage
+            packages/ui/src-tauri/target/release/bundle/deb/*.deb
+            packages/ui/src-tauri/target/release/bundle/rpm/*.rpm
+          if-no-files-found: warn
 
   release:
     name: Create Release
