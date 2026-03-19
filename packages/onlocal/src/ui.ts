@@ -12,7 +12,7 @@ export function renderLogo(text: string = "ONLOCAL"): string {
     const charData = chars[char] || chars[" "];
     if (charData) {
         for (let i = 0; i < tinyFont.lines; i++) {
-            lines[i] += charData[i] + space[i];
+            lines[i] += (charData[i] ?? "") + (space[i] ?? "");
         }
     }
   }

@@ -1,5 +1,14 @@
 export interface WSMessage {
-  type: "request" | "response" | "port" | "tunnel" | "ping" | "pong" | "ws_open" | "ws_frame" | "ws_close";
+  type:
+    | "request"
+    | "response"
+    | "response_start"
+    | "response_chunk"
+    | "response_end"
+    | "port"
+    | "tunnel"
+    | "ping"
+    | "pong";
 }
 
 export interface RequestMessage extends WSMessage {
@@ -19,6 +28,25 @@ export interface ResponseMessage extends WSMessage {
   body: { type: "text" | "binary"; data: string };
 }
 
+export interface ResponseStartMessage extends WSMessage {
+  type: "response_start";
+  id: string;
+  status: number;
+  headers: Record<string, string>;
+  bodyType: "text" | "binary";
+}
+
+export interface ResponseChunkMessage extends WSMessage {
+  type: "response_chunk";
+  id: string;
+  data: string;
+}
+
+export interface ResponseEndMessage extends WSMessage {
+  type: "response_end";
+  id: string;
+}
+
 export interface PortMessage extends WSMessage {
   type: "port";
   port: number;
@@ -27,25 +55,4 @@ export interface PortMessage extends WSMessage {
 export interface TunnelMessage extends WSMessage {
   type: "tunnel";
   url: string;
-}
-
-export interface WsOpenMessage extends WSMessage {
-  type: "ws_open";
-  streamId: string;
-  url: string;
-  headers: Record<string, string>;
-}
-
-export interface WsFrameMessage extends WSMessage {
-  type: "ws_frame";
-  streamId: string;
-  data: string;
-  isBinary: boolean;
-}
-
-export interface WsCloseMessage extends WSMessage {
-  type: "ws_close";
-  streamId: string;
-  code?: number;
-  reason?: string;
 }
