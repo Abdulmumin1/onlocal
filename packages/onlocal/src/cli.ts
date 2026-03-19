@@ -10,13 +10,18 @@ function showHelp() {
   console.log(`
 ${colors.bold}USAGE${colors.reset}
   ${colors.dim}$${colors.reset} onlocal ${colors.yellow}<port>${colors.reset}
+  ${colors.dim}$${colors.reset} onlocal ${colors.yellow}<port>${colors.reset} --client ${colors.yellow}<client-id>${colors.reset}
   ${colors.dim}$${colors.reset} onlocal config      ${colors.dim}# Configure settings${colors.reset}
 
 ${colors.bold}ARGUMENTS${colors.reset}
   ${colors.yellow}<port>${colors.reset}    Local port to expose ${colors.dim}(optional, defaults to config)${colors.reset}
 
+${colors.bold}OPTIONS${colors.reset}
+  ${colors.yellow}--client <client-id>${colors.reset}    Reserve a custom subdomain ${colors.dim}(min 7 lowercase letters/numbers)${colors.reset}
+
 ${colors.bold}EXAMPLES${colors.reset}
   ${colors.dim}$${colors.reset} onlocal 3000        ${colors.dim}# Expose localhost:3000${colors.reset}
+  ${colors.dim}$${colors.reset} onlocal 9798 --client owostack ${colors.dim}# Expose as owostack.onlocal.dev${colors.reset}
   ${colors.dim}$${colors.reset} onlocal             ${colors.dim}# Expose default port${colors.reset}
   ${colors.dim}$${colors.reset} onlocal config      ${colors.dim}# Update configuration${colors.reset}
 
@@ -25,7 +30,34 @@ ${colors.bold}MORE INFO${colors.reset}
 `);
 }
 
-const arg = process.argv[2];
+const args = process.argv.slice(2);
+const arg = args[0];
+const CLIENT_ID_PATTERN = /^[a-z0-9]{7,}$/;
+
+function getHttpBaseUrl(domain: string): string {
+  return domain
+    .replace(/^wss:\/\//, "https://")
+    .replace(/^ws:\/\//, "http://")
+    .replace(/\/+$/, "");
+}
+
+async function verifyClientIdAvailability(domain: string, clientId: string) {
+  const baseUrl = getHttpBaseUrl(domain);
+  const response = await fetch(
+    `${baseUrl}/client-id/${encodeURIComponent(clientId)}/status`
+  );
+
+  if (!response.ok) {
+    if (response.status === 409) {
+      throw new Error(
+        `Client ID '${clientId}' is already taken or currently in use.`
+      );
+    }
+
+    const text = await response.text();
+    throw new Error(text || "Failed to verify client ID availability.");
+  }
+}
 
 if (arg === "-h" || arg === "--help") {
   showHelp();
@@ -76,8 +108,51 @@ if (arg === "config") {
 } else {
     // Run tunnel
     const config = loadConfig();
-    
-    let port = parseInt(arg as string);
+
+    let port: number | undefined;
+    let clientId: string | undefined;
+
+    for (let index = 0; index < args.length; index++) {
+        const value = args[index];
+
+        if (value === undefined) {
+            continue;
+        }
+
+        if (value === "--client") {
+            const nextValue = args[index + 1];
+            if (!nextValue) {
+                console.error(`${colors.red}Error: Missing value for --client.${colors.reset}`);
+                process.exit(1);
+            }
+            clientId = nextValue;
+            index++;
+            continue;
+        }
+
+        if (value.startsWith("--")) {
+            console.error(`${colors.red}Error: Unknown option '${value}'.${colors.reset}`);
+            showHelp();
+            process.exit(1);
+        }
+
+        if (port === undefined) {
+            port = parseInt(value, 10);
+            continue;
+        }
+
+        console.error(`${colors.red}Error: Unexpected argument '${value}'.${colors.reset}`);
+        showHelp();
+        process.exit(1);
+    }
+
+    if (clientId && !CLIENT_ID_PATTERN.test(clientId)) {
+        console.error(
+            `${colors.red}Error: --client must be at least 7 characters and contain only lowercase letters and numbers.${colors.reset}`
+        );
+        process.exit(1);
+    }
+
     if (!port || isNaN(port)) {
         if (config.server.port) {
             port = config.server.port;
@@ -89,29 +164,63 @@ if (arg === "config") {
     }
 
     const tunnelDomain = process.env.TUNNEL_DOMAIN || config.tunnel.domain || "wss://onlocal.dev";
-    
+
     console.clear();
     console.log(renderLogo());
     console.log(""); // spacer
 
-    let tunnel = new TunnelClient({ port, domain: tunnelDomain });
-    tunnel.start();
+    (async () => {
+        if (clientId) {
+            await verifyClientIdAvailability(tunnelDomain, clientId);
+        }
 
-    if (process.stdin.isTTY) {
-        readline.emitKeypressEvents(process.stdin);
-        process.stdin.setRawMode(true);
+        let tunnel = new TunnelClient({ port, domain: tunnelDomain, clientId });
+        tunnel.start();
+        let isShuttingDown = false;
 
-        process.stdin.on("keypress", (_str, key) => {
-            if (key.ctrl && key.name === "c") {
-                process.exit();
+        const shutdownAndExit = async (exitCode: number) => {
+            if (isShuttingDown) {
+                return;
             }
-            if (key.name === "r") {
-                tunnel.forceReconnect();
+
+            isShuttingDown = true;
+            await tunnel.shutdown();
+
+            if (process.stdin.isTTY) {
+                process.stdin.setRawMode(false);
             }
-            if (key.name === "q" || key.name === "escape") {
-                console.log(`${colors.gray}Goodbye!${colors.reset}`);
-                process.exit(0);
-            }
+
+            process.exit(exitCode);
+        };
+
+        process.on("SIGINT", () => {
+            void shutdownAndExit(0);
         });
-    }
+
+        process.on("SIGTERM", () => {
+            void shutdownAndExit(0);
+        });
+
+        if (process.stdin.isTTY) {
+            readline.emitKeypressEvents(process.stdin);
+            process.stdin.setRawMode(true);
+
+            process.stdin.on("keypress", (_str, key) => {
+                if (key.ctrl && key.name === "c") {
+                    void shutdownAndExit(0);
+                }
+                if (key.name === "r") {
+                    tunnel.forceReconnect();
+                }
+                if (key.name === "q" || key.name === "escape") {
+                    console.log(`${colors.gray}Goodbye!${colors.reset}`);
+                    void shutdownAndExit(0);
+                }
+            });
+        }
+    })().catch((error) => {
+        const message = error instanceof Error ? error.message : "Failed to start tunnel.";
+        console.error(`${colors.red}Error: ${message}${colors.reset}`);
+        process.exit(1);
+    });
 }
