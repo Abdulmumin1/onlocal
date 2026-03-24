@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { TunnelDO } from './durable';
-import { isWebSocketUpgrade } from './websocket';
+import { getWebSocketConnectionParams, isWebSocketUpgrade } from './websocket';
 
 const app = new Hono<{ Bindings: { TUNNEL_DO: DurableObjectNamespace, TUNNEL_KV: KVNamespace, TUNNEL_DOMAIN: string } }>();
 const CLIENT_ID_PATTERN = /^[a-z0-9]{7,}$/;
@@ -88,13 +88,20 @@ app.get('/ws', async (c) => {
     return c.text('Expected websocket', 400);
   }
 
-  const providedClientId = c.req.query('clientId');
-  const reconnectToken = c.req.query('token');
-  const connectionId = c.req.query('connectionId') ?? crypto.randomUUID();
+  const {
+    providedClientId,
+    reconnectToken,
+    connectionId: requestedConnectionId,
+  } = getWebSocketConnectionParams(c.req.raw);
+  const connectionId = requestedConnectionId ?? crypto.randomUUID();
   let clientId: string;
   let doId: DurableObjectId;
 
-  console.log('Provided clientId:', providedClientId);
+  console.log('Control websocket params:', {
+    hasClientId: Boolean(providedClientId),
+    hasReconnectToken: Boolean(reconnectToken),
+    hasConnectionId: Boolean(requestedConnectionId),
+  });
 
   if (!reconnectToken) {
     return c.text('Missing reconnect token', 400);
