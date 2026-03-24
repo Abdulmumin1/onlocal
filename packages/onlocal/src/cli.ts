@@ -1,3 +1,6 @@
+#!/usr/bin/env node
+
+import packageJson from "../package.json";
 import { colors } from "./utils";
 import { TunnelClient } from "./Client";
 import * as readline from "readline";
@@ -15,6 +18,7 @@ ${colors.bold}ARGUMENTS${colors.reset}
 
 ${colors.bold}OPTIONS${colors.reset}
   ${colors.yellow}--client <client-id>${colors.reset}    Reserve a custom subdomain ${colors.dim}(min 7 lowercase letters/numbers)${colors.reset}
+  ${colors.yellow}-v, --version${colors.reset}    Show CLI version
 
 ${colors.bold}EXAMPLES${colors.reset}
   ${colors.dim}$${colors.reset} onlocal 3000        ${colors.dim}# Expose localhost:3000${colors.reset}
@@ -29,6 +33,7 @@ ${colors.bold}MORE INFO${colors.reset}
 const args = process.argv.slice(2);
 const arg = args[0];
 const CLIENT_ID_PATTERN = /^[a-z0-9]{7,}$/;
+const CLI_VERSION = packageJson.version;
 
 function getHttpBaseUrl(domain: string): string {
   return domain
@@ -57,6 +62,11 @@ async function verifyClientIdAvailability(domain: string, clientId: string) {
 
 if (arg === "-h" || arg === "--help") {
   showHelp();
+  process.exit(0);
+}
+
+if (arg === "-v" || arg === "--version") {
+  console.log(CLI_VERSION);
   process.exit(0);
 }
 
