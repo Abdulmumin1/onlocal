@@ -1,5 +1,11 @@
 # onlocal
 
+## 0.5.3
+
+### Patch Changes
+
+- c4458b1: reconnect algo
+
 ## 0.5.2
 
 ### Patch Changes
