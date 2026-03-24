@@ -8,6 +8,7 @@ import {
   ResponseEndMessage,
   TunnelMessage,
 } from "./types";
+import { isWebSocketUpgrade } from "./websocket";
 
 interface Env {
   TUNNEL_KV: KVNamespace;
@@ -205,7 +206,7 @@ export class TunnelDO extends DurableObject<Env> {
     const connectionId = request.headers.get("X-Connection-Id");
     const isControlWs = request.headers.get("X-Client-Id") !== null;
 
-    if (upgradeHeader === "websocket") {
+    if (isWebSocketUpgrade(upgradeHeader)) {
       // Determine if this is a control WebSocket (from CLI) or external WebSocket (from user)
       if (isControlWs || reconnectHeader) {
         if (!reconnectToken) {

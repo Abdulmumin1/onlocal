@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { TunnelDO } from './durable';
+import { isWebSocketUpgrade } from './websocket';
 
 const app = new Hono<{ Bindings: { TUNNEL_DO: DurableObjectNamespace, TUNNEL_KV: KVNamespace, TUNNEL_DOMAIN: string } }>();
 const CLIENT_ID_PATTERN = /^[a-z0-9]{7,}$/;
@@ -74,7 +75,7 @@ app.get('/ws', async (c) => {
   const upgradeHeader = c.req.header('Upgrade');
 
   if (subdomainClientId) {
-    if (upgradeHeader?.toLowerCase() === 'websocket') {
+    if (isWebSocketUpgrade(upgradeHeader)) {
       console.log('Rejecting tunneled websocket upgrade for clientId:', subdomainClientId);
       return rejectWebSocketPassthrough();
     }
@@ -83,7 +84,7 @@ app.get('/ws', async (c) => {
     return await proxyTunnelRequest(c.env, c.req.raw, subdomainClientId);
   }
 
-  if (upgradeHeader !== 'websocket') {
+  if (!isWebSocketUpgrade(upgradeHeader)) {
     return c.text('Expected websocket', 400);
   }
 
@@ -221,7 +222,7 @@ app.all('*', async (c) => {
     return c.redirect('https://onlocal.pages.dev', 302);
   }
 
-  if (upgradeHeader?.toLowerCase() === 'websocket') {
+  if (isWebSocketUpgrade(upgradeHeader)) {
     console.log('Rejecting tunneled websocket upgrade for clientId:', clientId, 'path:', url.pathname);
     return rejectWebSocketPassthrough();
   }
