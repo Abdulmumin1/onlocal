@@ -364,11 +364,11 @@ export class TunnelClient {
     this.forcingReconnect = true;
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close();
-      console.log(`${colors.yellow}⟳ Connected...${colors.reset}`);
+      console.log(`${colors.yellow}⟳ Reconnected...${colors.reset}`);
     } else {
       this.forcingReconnect = false;
       this.createWebSocket();
-      console.log(`${colors.yellow}⟳ Connected...${colors.reset}`);
+      console.log(`${colors.yellow}◌ Reconnected${colors.reset}`);
 
     }
   }
@@ -427,6 +427,9 @@ export class TunnelClient {
         return;
       }
 
+      console.log(`${colors.dim}• Offline${colors.reset}`);
+
+
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = null;
@@ -458,9 +461,9 @@ export class TunnelClient {
             : res.status >= 400
             ? "red"
             : "yellow";
-            
+
         const methodColor = colors.cyan;
-        
+
         // Log the request in a compact way
         console.log(
           `${methodColor}[${req.method}]${colors.reset} ${colors[statusColor as keyof typeof colors]}${res.status}${colors.reset} ${colors.gray}${url.pathname}${url.search}${colors.reset}`
@@ -548,13 +551,14 @@ export class TunnelClient {
       if (!isCurrentSocket()) {
         return;
       }
+      this.isRetry = true;
 
       this.ws = null;
       this.sendQueue = Promise.resolve();
 
-      console.error(
-        `${colors.red} Control websocket closed:${colors.reset} code=${event.code} clean=${event.wasClean} reason=${event.reason || "n/a"} active=${this.activeRequests} queued=${requestQueue.length} buffered=${ws.bufferedAmount}`
-      );
+      // console.error(
+      //   `${colors.red} Control websocket closed:${colors.reset} code=${event.code} clean=${event.wasClean} reason=${event.reason || "n/a"} active=${this.activeRequests} queued=${requestQueue.length} buffered=${ws.bufferedAmount}`
+      // );
 
       if (this.forcingReconnect) {
         this.forcingReconnect = false;
