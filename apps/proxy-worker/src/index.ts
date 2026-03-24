@@ -1,6 +1,10 @@
 import { Hono } from 'hono';
 import { TunnelDO } from './durable';
-import { getWebSocketConnectionParams, isWebSocketUpgrade } from './websocket';
+import {
+  getWebSocketConnectionParams,
+  isWebSocketUpgrade,
+  resolveReconnectToken,
+} from './websocket';
 
 const app = new Hono<{ Bindings: { TUNNEL_DO: DurableObjectNamespace, TUNNEL_KV: KVNamespace, TUNNEL_DOMAIN: string } }>();
 const CLIENT_ID_PATTERN = /^[a-z0-9]{7,}$/;
@@ -90,22 +94,20 @@ app.get('/ws', async (c) => {
 
   const {
     providedClientId,
-    reconnectToken,
+    reconnectToken: requestedReconnectToken,
     connectionId: requestedConnectionId,
   } = getWebSocketConnectionParams(c.req.raw);
   const connectionId = requestedConnectionId ?? crypto.randomUUID();
+  const reconnectToken = resolveReconnectToken(requestedReconnectToken);
   let clientId: string;
   let doId: DurableObjectId;
 
   console.log('Control websocket params:', {
     hasClientId: Boolean(providedClientId),
-    hasReconnectToken: Boolean(reconnectToken),
+    hasReconnectToken: Boolean(requestedReconnectToken),
     hasConnectionId: Boolean(requestedConnectionId),
+    generatedReconnectToken: !requestedReconnectToken,
   });
-
-  if (!reconnectToken) {
-    return c.text('Missing reconnect token', 400);
-  }
 
   if (providedClientId && !isValidClientId(providedClientId)) {
     return c.text('Invalid client ID. Use at least 7 lowercase letters or numbers.', 400);
