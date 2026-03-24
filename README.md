@@ -52,15 +52,11 @@ onlocal 3000
 
 This exposes `localhost:3000` and gives you a public URL like `https://abc123.onlocal.dev`.
 
-### Configuration
-
-You can configure the default behavior (e.g., self-hosted tunnel URL) using:
+To use a self-hosted tunnel server, set `TUNNEL_DOMAIN` when starting the CLI:
 
 ```bash
-onlocal config
+TUNNEL_DOMAIN=wss://my-tunnel.example.com onlocal 3000
 ```
-
-This will open an interactive setup to save your preferences to `~/.onlocal/config.yml`.
 
 ## How It Works
 
@@ -129,7 +125,7 @@ Configure your `wrangler.toml` with your domain and KV namespace.
 
 ### 2. Point the CLI to your server
 
-Modify the `TUNNEL_DOMAIN` in the client or fork the project.
+Run the CLI with `TUNNEL_DOMAIN=wss://your-domain` to point it at your own worker.
 
 ## Development
 
