@@ -18,3 +18,7 @@ export function getWebSocketConnectionParams(request: Request): {
     connectionId,
   };
 }
+
+export function resolveReconnectToken(reconnectToken?: string): string {
+  return reconnectToken ?? crypto.randomUUID();
+}

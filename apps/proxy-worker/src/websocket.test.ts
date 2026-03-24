@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getWebSocketConnectionParams, isWebSocketUpgrade } from "./websocket";
+import {
+  getWebSocketConnectionParams,
+  isWebSocketUpgrade,
+  resolveReconnectToken,
+} from "./websocket";
 
 describe("isWebSocketUpgrade", () => {
   it("accepts websocket upgrades regardless of casing", () => {
@@ -36,5 +40,17 @@ describe("getWebSocketConnectionParams", () => {
       reconnectToken: undefined,
       connectionId: undefined,
     });
+  });
+});
+
+describe("resolveReconnectToken", () => {
+  it("preserves a provided reconnect token", () => {
+    expect(resolveReconnectToken("abc123")).toBe("abc123");
+  });
+
+  it("generates a reconnect token when one is missing", () => {
+    const generatedToken = resolveReconnectToken();
+
+    expect(generatedToken).toHaveLength(36);
   });
 });
