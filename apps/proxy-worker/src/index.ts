@@ -228,7 +228,7 @@ app.all('*', async (c) => {
     if (url.pathname === '/install.sh') {
       return c.redirect('https://raw.githubusercontent.com/Abdulmumin1/onlocal/main/install.sh', 302);
     }
-    return c.redirect('https://onlocal.pages.dev', 302);
+    return c.env.LANDING.fetch(c.req.url)
   }
 
   if (isWebSocketUpgrade(upgradeHeader)) {

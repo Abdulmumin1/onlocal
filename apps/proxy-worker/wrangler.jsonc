@@ -15,6 +15,12 @@
       "id": "ebc2733927174d77a19cde043ba21baf"
     }
   ],
+  "services": [
+    {
+      "binding": "LANDING",
+      "service": "onlocal-landing"
+    }
+  ],
 
   // "r2_buckets": [
   //   {
