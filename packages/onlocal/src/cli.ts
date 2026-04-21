@@ -2,7 +2,7 @@
 
 import packageJson from "../package.json";
 import { colors } from "./utils";
-import { TunnelClient } from "./Client";
+import { TunnelClient, type LogVerbosity } from "./Client";
 import * as readline from "readline";
 import { renderLogo } from "./ui";
 
@@ -18,6 +18,7 @@ ${colors.bold}ARGUMENTS${colors.reset}
 
 ${colors.bold}OPTIONS${colors.reset}
   ${colors.yellow}--client <client-id>${colors.reset}    Reserve a custom subdomain ${colors.dim}(min 7 lowercase letters/numbers)${colors.reset}
+  ${colors.yellow}--verbosity <silent|normal|verbose>${colors.reset}    Control request and connection log output
   ${colors.yellow}-v, --version${colors.reset}    Show CLI version
 
 ${colors.bold}EXAMPLES${colors.reset}
@@ -72,6 +73,7 @@ if (arg === "-v" || arg === "--version") {
 
 let port: number | undefined;
 let clientId: string | undefined;
+let verbosity: LogVerbosity = "normal";
 
 for (let index = 0; index < args.length; index++) {
     const value = args[index];
@@ -87,6 +89,25 @@ for (let index = 0; index < args.length; index++) {
             process.exit(1);
         }
         clientId = nextValue;
+        index++;
+        continue;
+    }
+
+    if (value === "--verbosity") {
+        const nextValue = args[index + 1] as LogVerbosity | undefined;
+        if (!nextValue) {
+            console.error(`${colors.red}Error: Missing value for --verbosity.${colors.reset}`);
+            process.exit(1);
+        }
+
+        if (!["silent", "normal", "verbose"].includes(nextValue)) {
+            console.error(
+                `${colors.red}Error: --verbosity must be one of silent, normal, or verbose.${colors.reset}`
+            );
+            process.exit(1);
+        }
+
+        verbosity = nextValue;
         index++;
         continue;
     }
@@ -131,7 +152,7 @@ console.log(""); // spacer
         await verifyClientIdAvailability(tunnelDomain, clientId);
     }
 
-    let tunnel = new TunnelClient({ port, domain: tunnelDomain, clientId });
+    let tunnel = new TunnelClient({ port, domain: tunnelDomain, clientId, verbosity });
     tunnel.start();
     let isShuttingDown = false;
 
@@ -170,7 +191,6 @@ console.log(""); // spacer
                 tunnel.forceReconnect();
             }
             if (key.name === "q" || key.name === "escape") {
-                console.log(`${colors.gray}Goodbye!${colors.reset}`);
                 void shutdownAndExit(0);
             }
         });
