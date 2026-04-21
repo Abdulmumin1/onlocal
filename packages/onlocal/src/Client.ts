@@ -1,5 +1,6 @@
 import { colors } from "./utils";
-import { renderLogo, renderBox } from "./ui";
+import * as readline from "readline";
+import { renderSessionStatus, renderTunnelSummary, type SessionStatus } from "./ui";
 import type {
   WSMessage,
   RequestMessage,
@@ -14,12 +15,17 @@ export interface TunnelOptions {
   port: number;
   domain?: string;
   clientId?: string;
+  verbosity?: LogVerbosity;
 }
+
+export type LogVerbosity = "silent" | "normal" | "verbose";
+type LogLevel = "always" | "normal" | "verbose";
 
 export class TunnelClient {
   static readonly MAX_TEXT_CHUNK_CHARS = 48 * 1024;
   static readonly MIN_TEXT_CHUNK_CHARS = 1024;
   static readonly MAX_BINARY_CHUNK_BYTES = 24 * 1024;
+  static readonly SOCKET_CONNECT_TIMEOUT_MS = 10000;
 
   clientId: string = "";
   requestedClientId?: string;
@@ -34,7 +40,12 @@ export class TunnelClient {
   forcingReconnect: boolean = false;
   isStopping: boolean = false;
   reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  connectTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   sendQueue: Promise<void> = Promise.resolve();
+  verbosity: LogVerbosity;
+  sessionStatus: SessionStatus = "connecting";
+  tunnelUrl: string | null = null;
+  hasShownTunnel: boolean = false;
 
   sanitizeRequestHeaders(headers: Record<string, string>): Record<string, string> {
     const nextHeaders = { ...headers };
@@ -271,10 +282,148 @@ export class TunnelClient {
     this.domain = options.domain || "wss://onlocal.dev";
     this.requestedClientId = options.clientId;
     this.reconnectToken = crypto.randomUUID();
+    this.verbosity = options.verbosity || "normal";
+  }
+
+  shouldLog(level: LogLevel = "normal"): boolean {
+    if (level === "always") {
+      return true;
+    }
+
+    if (this.verbosity === "silent") {
+      return false;
+    }
+
+    if (level === "verbose") {
+      return this.verbosity === "verbose";
+    }
+
+    return true;
+  }
+
+  writeLine(message: string, level: LogLevel = "normal") {
+    if (!this.shouldLog(level)) {
+      return;
+    }
+
+    if (!process.stdout.isTTY || !this.hasShownTunnel) {
+      console.log(message);
+      return;
+    }
+
+    readline.clearLine(process.stdout, 0);
+    readline.cursorTo(process.stdout, 0);
+    process.stdout.write(`${message}\n`);
+    this.renderSessionStatusLine();
+  }
+
+  formatError(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    if (typeof error === "string") {
+      return error;
+    }
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+
+  writeVerboseError(prefix: string, error: unknown) {
+    this.writeLine(
+      `${colors.red}${prefix}:${colors.reset} ${this.formatError(error)}`,
+      "verbose"
+    );
+  }
+
+  renderSessionStatusLine() {
+    if (!this.hasShownTunnel) {
+      return;
+    }
+
+    const statusLine = renderSessionStatus(this.sessionStatus);
+
+    if (!process.stdout.isTTY) {
+      console.log(statusLine);
+      return;
+    }
+
+    readline.clearLine(process.stdout, 0);
+    readline.cursorTo(process.stdout, 0);
+    process.stdout.write(statusLine);
+  }
+
+  setSessionStatus(status: SessionStatus) {
+    if (this.sessionStatus === status) {
+      return;
+    }
+
+    this.sessionStatus = status;
+    this.renderSessionStatusLine();
+  }
+
+  renderTunnel(url: string) {
+    const hasUrlChanged = this.tunnelUrl !== url;
+    this.tunnelUrl = url;
+
+    if (!this.hasShownTunnel || hasUrlChanged) {
+      this.hasShownTunnel = true;
+      this.writeLine(
+        renderTunnelSummary(url, this.port),
+        "always"
+      );
+    }
+
+    this.renderSessionStatusLine();
+  }
+
+  finishStatusLine() {
+    if (process.stdout.isTTY && this.hasShownTunnel) {
+      readline.clearLine(process.stdout, 0);
+      readline.cursorTo(process.stdout, 0);
+    }
+  }
+
+  clearReconnectTimer() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  clearConnectTimeoutTimer() {
+    if (this.connectTimeoutTimer) {
+      clearTimeout(this.connectTimeoutTimer);
+      this.connectTimeoutTimer = null;
+    }
+  }
+
+  startConnectTimeout(ws: WebSocket) {
+    this.clearConnectTimeoutTimer();
+    this.connectTimeoutTimer = setTimeout(() => {
+      if (this.ws !== ws || ws.readyState !== WebSocket.CONNECTING) {
+        return;
+      }
+
+      this.writeLine(
+        `${colors.dim}Socket connect timed out${colors.reset}`,
+        "verbose"
+      );
+      try {
+        ws.close();
+      } catch {}
+      this.ws = null;
+      this.reconnect();
+    }, TunnelClient.SOCKET_CONNECT_TIMEOUT_MS);
   }
 
   start() {
     this.isStopping = false;
+    this.sessionStatus = "connecting";
     this.createWebSocket();
   }
 
@@ -308,6 +457,9 @@ export class TunnelClient {
 
   async shutdown() {
     this.isStopping = true;
+    this.setSessionStatus("offline");
+    this.clearReconnectTimer();
+    this.clearConnectTimeoutTimer();
 
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close(1000, "Client shutting down");
@@ -316,8 +468,10 @@ export class TunnelClient {
     try {
       await this.releaseClientId();
     } catch (error) {
-      console.error(`${colors.red} Failed to release client ID:${colors.reset}`, error);
+      this.writeVerboseError("Failed to release client ID", error);
     }
+
+    this.finishStatusLine();
   }
 
   createWebSocket() {
@@ -343,6 +497,8 @@ export class TunnelClient {
     const ws = new WebSocket(wsUrl.toString());
     this.ws = ws;
     this.sendQueue = Promise.resolve();
+    this.setSessionStatus(this.hasShownTunnel ? "reconnecting" : "connecting");
+    this.startConnectTimeout(ws);
     this.handleWebsocket(ws);
   }
 
@@ -350,26 +506,25 @@ export class TunnelClient {
     if (this.forcingReconnect || this.isStopping) return;
     if (this.reconnectTimer) return;
 
-    this.backoffDelay = Math.min(this.backoffDelay * 2, 60000);
     this.isRetry = true;
+    this.setSessionStatus("reconnecting");
+    const reconnectDelay = this.backoffDelay;
+    this.backoffDelay = Math.min(this.backoffDelay * 2, 60000);
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.createWebSocket();
-    }, this.backoffDelay);
+    }, reconnectDelay);
   }
 
   forceReconnect() {
-    console.log(`${colors.yellow}⟳ Force reconnecting...${colors.reset}`);
+    this.setSessionStatus("reconnecting");
     this.forcingReconnect = true;
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close();
-      console.log(`${colors.yellow}⟳ Reconnected...${colors.reset}`);
     } else {
       this.forcingReconnect = false;
       this.createWebSocket();
-      console.log(`${colors.yellow}◌ Reconnected${colors.reset}`);
-
     }
   }
 
@@ -427,21 +582,17 @@ export class TunnelClient {
         return;
       }
 
-      console.log(`${colors.dim}• Offline${colors.reset}`);
-
-
       if (this.reconnectTimer) {
-        clearTimeout(this.reconnectTimer);
-        this.reconnectTimer = null;
+        this.clearReconnectTimer();
       }
+
+      this.clearConnectTimeoutTimer();
+      this.setSessionStatus("online");
 
       if (this.isRetry) {
         this.backoffDelay = 1000;
         this.isRetry = false;
-        return;
       }
-
-      console.log(`${colors.yellow}✓${colors.reset} Connected to proxy, proxying to ${colors.bold}localhost:${this.port}${colors.reset}`);
     };
 
     const processRequest = async (req: RequestMessage) => {
@@ -465,17 +616,16 @@ export class TunnelClient {
         const methodColor = colors.cyan;
 
         // Log the request in a compact way
-        console.log(
+        this.writeLine(
           `${methodColor}[${req.method}]${colors.reset} ${colors[statusColor as keyof typeof colors]}${res.status}${colors.reset} ${colors.gray}${url.pathname}${url.search}${colors.reset}`
         );
         await this.sendStreamedResponse(req, res, sendControlMessage);
       } catch (error) {
-        console.error(
-          `${colors.red} Failed to proxy request:${colors.reset}`,
-          req.method,
-          req.url,
-          error
+        this.writeLine(
+          `${colors.red}Failed to proxy request:${colors.reset} ${req.method} ${req.url}`,
+          "always"
         );
+        this.writeVerboseError("Proxy failure details", error);
 
         const responseData: ResponseMessage = {
           type: "response",
@@ -523,19 +673,12 @@ export class TunnelClient {
             this.clientId = subdomainMatch[1] ?? "";
           }
 
-          if (!this.isRetry) {
-            console.log(renderBox("Tunnel Established", [
-              `${colors.bold}${colors.yellow}${tunnel.url}${colors.reset}`,
-            ], "Press 'r' to force reconnect"));
-          }
+          this.renderTunnel(tunnel.url);
         } else if (data.type === "ping") {
           await sendControlMessage({ type: "pong" });
         }
       } catch (e) {
-        console.error(
-          `${colors.red} Error handling request:${colors.reset}`,
-          e
-        );
+        this.writeVerboseError("Error handling websocket message", e);
         const responseData: ResponseMessage = {
           type: "response",
           id: "unknown",
@@ -543,7 +686,9 @@ export class TunnelClient {
           headers: {},
           body: { type: "text", data: "Internal error" },
         };
-        ws.send(JSON.stringify(responseData));
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(responseData));
+        }
       }
     };
 
@@ -553,8 +698,10 @@ export class TunnelClient {
       }
       this.isRetry = true;
 
+      this.clearConnectTimeoutTimer();
       this.ws = null;
       this.sendQueue = Promise.resolve();
+      this.setSessionStatus("reconnecting");
 
       // console.error(
       //   `${colors.red} Control websocket closed:${colors.reset} code=${event.code} clean=${event.wasClean} reason=${event.reason || "n/a"} active=${this.activeRequests} queued=${requestQueue.length} buffered=${ws.bufferedAmount}`
@@ -569,14 +716,15 @@ export class TunnelClient {
       }
 
       if (this.isStopping) {
+        this.setSessionStatus("offline");
         return;
       }
 
-      if (!event.wasClean) {
-        this.reconnect();
-        return;
-      }
-      console.log(`${colors.yellow} Disconnected from proxy${colors.reset}`);
+      this.writeLine(
+        `${colors.dim}Socket closed${colors.reset} ${colors.gray}code=${event.code} clean=${event.wasClean}${colors.reset}`,
+        "verbose"
+      );
+      this.reconnect();
     };
 
     ws.onerror = (error) => {
@@ -588,7 +736,8 @@ export class TunnelClient {
         return;
       }
 
-      console.error(`${colors.red} WebSocket error:${colors.reset}`, error);
+      this.setSessionStatus("reconnecting");
+      this.writeVerboseError("WebSocket error", error);
     };
   }
 }
