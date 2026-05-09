@@ -18,6 +18,8 @@ interface Env {
 const CONTROL_SOCKET_TAG = "control";
 const CONTROL_CONNECTION_TAG_PREFIX = "control-connection:";
 const REQUEST_TIMEOUT_MS = 60000;
+const CONTROL_PING_INTERVAL_MS = 15000;
+const CONTROL_PONG_TIMEOUT_MS = 30000;
 const textEncoder = new TextEncoder();
 
 interface PendingResponseStream {
@@ -41,8 +43,8 @@ export class TunnelDO extends DurableObject<Env> {
   clientId: string | null = null;
   reconnectToken: string | null = null;
   activeConnectionId: string | null = null;
-  pingInterval: NodeJS.Timeout | null = null;
-  pongTimeout: NodeJS.Timeout | null = null;
+  pingInterval: ReturnType<typeof setInterval> | null = null;
+  pongTimeout: ReturnType<typeof setTimeout> | null = null;
   disconnectCleanupTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -130,6 +132,53 @@ export class TunnelDO extends DurableObject<Env> {
     }
   }
 
+  clearControlPongTimeout() {
+    if (this.pongTimeout !== null) {
+      clearTimeout(this.pongTimeout);
+      this.pongTimeout = null;
+    }
+  }
+
+  clearControlKeepAlive() {
+    if (this.pingInterval !== null) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+
+    this.clearControlPongTimeout();
+  }
+
+  startControlKeepAlive(ws: WebSocket) {
+    this.clearControlKeepAlive();
+
+    this.pingInterval = setInterval(() => {
+      if (this.getControlWebSocket() !== ws || ws.readyState !== WebSocket.OPEN) {
+        this.clearControlKeepAlive();
+        return;
+      }
+
+      try {
+        ws.send(JSON.stringify({ type: "ping" } satisfies WSMessage));
+      } catch {
+        try {
+          ws.close(1011, "Ping failed");
+        } catch {}
+        return;
+      }
+
+      this.clearControlPongTimeout();
+      this.pongTimeout = setTimeout(() => {
+        if (this.getControlWebSocket() !== ws || ws.readyState !== WebSocket.OPEN) {
+          return;
+        }
+
+        try {
+          ws.close(1011, "Pong timeout");
+        } catch {}
+      }, CONTROL_PONG_TIMEOUT_MS);
+    }, CONTROL_PING_INTERVAL_MS);
+  }
+
   refreshResponseStreamTimeout(reqId: string) {
     const pending = this.pendingRequests.get(reqId);
     if (!pending?.responseStream) {
@@ -137,9 +186,6 @@ export class TunnelDO extends DurableObject<Env> {
     }
 
     this.clearResponseStreamTimeout(pending.responseStream);
-    pending.responseStream.timeout = setTimeout(() => {
-      this.failPendingRequest(reqId, new Error("Response stream timeout"));
-    }, REQUEST_TIMEOUT_MS);
   }
 
   failPendingRequest(reqId: string, error: Error) {
@@ -466,10 +512,7 @@ export class TunnelDO extends DurableObject<Env> {
       } else if (data.type === "pong") {
         // Received pong from client, keepalive ok
         console.log("Received pong from client");
-        if (this.pongTimeout) {
-          clearTimeout(this.pongTimeout);
-          this.pongTimeout = null;
-        }
+        this.clearControlPongTimeout();
       }
     } catch (e) {
       console.error("Invalid message:", message);
@@ -486,14 +529,13 @@ export class TunnelDO extends DurableObject<Env> {
     console.log(
       `Client ${this.clientId} disconnected, code: ${code}, reason: ${reason}`
     );
-    if (this.pingInterval) clearInterval(this.pingInterval);
-    if (this.pongTimeout) clearTimeout(this.pongTimeout);
 
     const replacementControlWs = this.getControlWebSocket();
     if (replacementControlWs && replacementControlWs !== ws) {
       return;
     }
 
+    this.clearControlKeepAlive();
     this.activeConnectionId = null;
     this.scheduleDisconnectCleanup();
   }
@@ -543,6 +585,7 @@ export class TunnelDO extends DurableObject<Env> {
     this.clients.set(this.clientId, ws);
     await this.ctx.storage.put("clientId", this.clientId);
     await this.ctx.storage.put("reconnectToken", this.reconnectToken);
+    this.startControlKeepAlive(ws);
 
     // Send tunnel URL
     const domain = this.env.TUNNEL_DOMAIN || "localhost";

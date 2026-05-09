@@ -1,6 +1,6 @@
-import { colors } from "./utils.ts";
+import { colors } from "./utils.js";
 import * as readline from "readline";
-import { renderSessionStatus, renderTunnelSummary, type SessionStatus } from "./ui.ts";
+import { renderSessionStatus, renderTunnelSummary, type SessionStatus } from "./ui.js";
 import type {
   WSMessage,
   RequestMessage,
@@ -9,13 +9,14 @@ import type {
   ResponseChunkMessage,
   ResponseEndMessage,
   TunnelMessage,
-} from "./types.ts";
+} from "./types.js";
 
 export interface TunnelOptions {
   port: number;
   domain?: string;
   clientId?: string;
   verbosity?: LogVerbosity;
+  maxConcurrent?: number;
 }
 
 export type LogVerbosity = "silent" | "normal" | "verbose";
@@ -69,13 +70,18 @@ export class TunnelClient {
   static readonly MIN_TEXT_CHUNK_CHARS = 1024;
   static readonly MAX_BINARY_CHUNK_BYTES = 24 * 1024;
   static readonly SOCKET_CONNECT_TIMEOUT_MS = 10000;
+  static readonly FLUSH_IDLE_MS = 50;
+  static readonly CONTROL_PING_INTERVAL_MS = 25000;
+  static readonly CONTROL_PONG_TIMEOUT_MS = 10000;
+  static readonly CONTROL_BACKPRESSURE_TIMEOUT_MS = 30000;
+  static readonly DEFAULT_MAX_CONCURRENT = 64;
 
   clientId: string = "";
   requestedClientId?: string;
   reconnectToken: string;
   domain: string;
   port: number;
-  maxConcurrent = 6;
+  maxConcurrent: number;
   activeRequests: number = 0;
   backoffDelay: number = 1000;
   isRetry: boolean = false;
@@ -84,14 +90,19 @@ export class TunnelClient {
   isStopping: boolean = false;
   reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   connectTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  controlPingTimer: ReturnType<typeof setInterval> | null = null;
+  controlPongTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   sendQueue: Promise<void> = Promise.resolve();
   verbosity: LogVerbosity;
   sessionStatus: SessionStatus = "connecting";
   tunnelUrl: string | null = null;
   hasShownTunnel: boolean = false;
-  listeners: {
-    [K in TunnelLifecycleEventName]?: Set<TunnelLifecycleListener<K>>;
-  } = {};
+  listeners: Partial<
+    Record<
+      TunnelLifecycleEventName,
+      Set<TunnelLifecycleListener<TunnelLifecycleEventName>>
+    >
+  > = {};
   readyWaiters: Array<{
     resolve: (event: TunnelReadyEvent) => void;
     reject: (error: Error) => void;
@@ -257,20 +268,60 @@ export class TunnelClient {
   async sendTextStream(
     reqId: string,
     body: ReadableStream<Uint8Array>,
-    sendControlMessage: (payload: WSMessage) => Promise<void>
+    sendControlMessage: (payload: WSMessage) => Promise<void>,
+    flushImmediately = false
   ) {
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let bufferedText = "";
+    type ReaderResult = Awaited<ReturnType<typeof reader.read>>;
+    let pendingRead: Promise<ReaderResult> | null = null;
 
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        pendingRead ??= reader.read();
+
+        const nextStep:
+          | { type: "read"; result: ReaderResult }
+          | { type: "flush" } =
+          !flushImmediately && bufferedText.length > 0
+            ? await Promise.race([
+                pendingRead.then((result) => ({
+                  type: "read" as const,
+                  result,
+                })),
+                new Promise<{ type: "flush" }>((resolve) =>
+                  setTimeout(() => resolve({ type: "flush" }), TunnelClient.FLUSH_IDLE_MS)
+                ),
+              ])
+            : {
+                type: "read",
+                result: await pendingRead,
+              };
+
+        if (nextStep.type === "flush") {
+          await this.sendTextChunks(reqId, bufferedText, sendControlMessage);
+          bufferedText = "";
+          continue;
+        }
+
+        const { done, value } = nextStep.result;
+
+        pendingRead = null;
+
         if (done) {
           break;
         }
 
         bufferedText += decoder.decode(value, { stream: true });
+
+        if (flushImmediately) {
+          if (bufferedText.length > 0) {
+            await this.sendTextChunks(reqId, bufferedText, sendControlMessage);
+            bufferedText = "";
+          }
+          continue;
+        }
 
         while (bufferedText.length >= TunnelClient.MIN_TEXT_CHUNK_CHARS) {
           const nextChunk = bufferedText.slice(
@@ -301,6 +352,10 @@ export class TunnelClient {
       Object.fromEntries(res.headers.entries())
     );
     const contentType = res.headers.get("content-type") || "";
+    const isLowLatencyTextStream =
+      contentType.includes("text/event-stream") ||
+      contentType.includes("application/x-ndjson") ||
+      contentType.includes("application/json-seq");
     const bodyType = this.isTextResponse(contentType) ? "text" : "binary";
     const shouldSendBody =
       req.method !== "HEAD" && !this.isNullBodyStatus(res.status);
@@ -319,7 +374,12 @@ export class TunnelClient {
 
     if (res.body) {
       if (bodyType === "text") {
-        await this.sendTextStream(req.id, res.body, sendControlMessage);
+        await this.sendTextStream(
+          req.id,
+          res.body,
+          sendControlMessage,
+          isLowLatencyTextStream
+        );
       } else {
         await this.sendBinaryChunks(req.id, res.body, sendControlMessage);
       }
@@ -334,6 +394,7 @@ export class TunnelClient {
     this.requestedClientId = options.clientId;
     this.reconnectToken = crypto.randomUUID();
     this.verbosity = options.verbosity || "normal";
+    this.maxConcurrent = options.maxConcurrent ?? TunnelClient.DEFAULT_MAX_CONCURRENT;
   }
 
   shouldLog(level: LogLevel = "normal"): boolean {
@@ -450,9 +511,17 @@ export class TunnelClient {
     eventName: K,
     listener: TunnelLifecycleListener<K>
   ): () => void {
-    const listeners = (this.listeners[eventName] ??= new Set()) as Set<
-      TunnelLifecycleListener<K>
-    >;
+    let listeners = this.listeners[eventName] as
+      | Set<TunnelLifecycleListener<K>>
+      | undefined;
+
+    if (!listeners) {
+      listeners = new Set<TunnelLifecycleListener<K>>();
+      this.listeners[eventName] = listeners as unknown as Set<
+        TunnelLifecycleListener<TunnelLifecycleEventName>
+      >;
+    }
+
     listeners.add(listener);
     return () => this.off(eventName, listener);
   }
@@ -556,6 +625,57 @@ export class TunnelClient {
     }
   }
 
+  clearControlPongTimeoutTimer() {
+    if (this.controlPongTimeoutTimer) {
+      clearTimeout(this.controlPongTimeoutTimer);
+      this.controlPongTimeoutTimer = null;
+    }
+  }
+
+  clearControlKeepAlive() {
+    if (this.controlPingTimer) {
+      clearInterval(this.controlPingTimer);
+      this.controlPingTimer = null;
+    }
+
+    this.clearControlPongTimeoutTimer();
+  }
+
+  startControlKeepAlive(ws: WebSocket) {
+    this.clearControlKeepAlive();
+
+    this.controlPingTimer = setInterval(() => {
+      if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) {
+        this.clearControlKeepAlive();
+        return;
+      }
+
+      try {
+        ws.send(JSON.stringify({ type: "ping" } satisfies WSMessage));
+      } catch {
+        try {
+          ws.close();
+        } catch {}
+        return;
+      }
+
+      this.clearControlPongTimeoutTimer();
+      this.controlPongTimeoutTimer = setTimeout(() => {
+        if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) {
+          return;
+        }
+
+        this.writeLine(
+          `${colors.dim}Control socket pong timeout${colors.reset}`,
+          "verbose"
+        );
+        try {
+          ws.close();
+        } catch {}
+      }, TunnelClient.CONTROL_PONG_TIMEOUT_MS);
+    }, TunnelClient.CONTROL_PING_INTERVAL_MS);
+  }
+
   startConnectTimeout(ws: WebSocket) {
     this.clearConnectTimeoutTimer();
     this.connectTimeoutTimer = setTimeout(() => {
@@ -614,6 +734,7 @@ export class TunnelClient {
     this.setSessionStatus("offline");
     this.clearReconnectTimer();
     this.clearConnectTimeoutTimer();
+    this.clearControlKeepAlive();
 
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close(1000, "Client shutting down");
@@ -711,12 +832,22 @@ export class TunnelClient {
       this.sendQueue = this.sendQueue
         .catch(() => {})
         .then(async () => {
+          let waitedMs = 0;
+
           while (
             isCurrentSocket() &&
             ws.readyState === WebSocket.OPEN &&
             ws.bufferedAmount > 512 * 1024
           ) {
+            if (waitedMs >= TunnelClient.CONTROL_BACKPRESSURE_TIMEOUT_MS) {
+              try {
+                ws.close();
+              } catch {}
+              throw new Error("Control websocket backpressure timeout");
+            }
+
             await new Promise((resolve) => setTimeout(resolve, 10));
+            waitedMs += 10;
           }
 
           if (!isCurrentSocket() || ws.readyState !== WebSocket.OPEN) {
@@ -743,6 +874,7 @@ export class TunnelClient {
 
       this.clearConnectTimeoutTimer();
       this.setSessionStatus("online");
+      this.startControlKeepAlive(ws);
 
       if (this.isRetry) {
         this.backoffDelay = 1000;
@@ -839,7 +971,11 @@ export class TunnelClient {
 
           this.renderTunnel(tunnel.url);
         } else if (data.type === "ping") {
-          await sendControlMessage({ type: "pong" });
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "pong" } satisfies WSMessage));
+          }
+        } else if (data.type === "pong") {
+          this.clearControlPongTimeoutTimer();
         }
       } catch (e) {
         this.writeVerboseError("Error handling websocket message", e);
@@ -863,6 +999,7 @@ export class TunnelClient {
       this.isRetry = true;
 
       this.clearConnectTimeoutTimer();
+      this.clearControlKeepAlive();
       this.ws = null;
       this.sendQueue = Promise.resolve();
       this.setSessionStatus("reconnecting");
@@ -905,6 +1042,7 @@ export class TunnelClient {
         return;
       }
 
+      this.clearControlKeepAlive();
       this.setSessionStatus("reconnecting");
       this.emit("error", {
         message: "WebSocket error",

@@ -1,4 +1,4 @@
-import { colors } from "./utils.ts";
+import { colors } from "./utils.js";
 // @ts-ignore
 import tinyFont from "./components/tiny.json" with { type: "json" };
 
