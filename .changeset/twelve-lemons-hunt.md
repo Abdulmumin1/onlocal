@@ -1,5 +1,5 @@
 ---
-"onlocal": minor
+"onlocal": patch
 ---
 
 Add SDK lifecycle helpers for embedded tunnel clients.
