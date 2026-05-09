@@ -1,3 +1,3 @@
-export * from "./src/Client";
-export * from "./src/types";
-export * from "./src/utils";
+export * from "./src/Client.ts";
+export * from "./src/types.ts";
+export * from "./src/utils.ts";

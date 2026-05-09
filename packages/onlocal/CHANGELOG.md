@@ -8,6 +8,8 @@
 
   The `TunnelClient` now exposes lifecycle listeners for ready, status, request, error, and closed events, plus `waitUntilReady()` for consumers that need the public tunnel URL without scraping CLI output. A new `startTunnel()` helper wraps the common SDK flow and returns `{ url, clientId, client, stop }`.
 
+- Add explicit `.ts` extensions for Deno/Bun compatibility, use `with { type: "json" }` for JSON imports, and declare `main`/`exports` fields in `package.json`.
+
 ## 0.5.4
 
 ### Patch Changes

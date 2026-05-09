@@ -1,6 +1,6 @@
-import { colors } from "./utils";
+import { colors } from "./utils.ts";
 // @ts-ignore
-import tinyFont from "./components/tiny.json";
+import tinyFont from "./components/tiny.json" with { type: "json" };
 
 export type SessionStatus = "connecting" | "online" | "reconnecting" | "offline";
 
