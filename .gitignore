@@ -5,7 +5,7 @@ node_modules/
 out
 dist
 *.tgz
-
+.chump/
 # UI output
 packages/ui/dist/
 packages/ui/src-tauri/target/

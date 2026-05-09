@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 import packageJson from "../package.json";
-import { colors } from "./utils";
-import { TunnelClient, type LogVerbosity } from "./Client";
+import { colors } from "./utils.ts";
+import { TunnelClient, type LogVerbosity } from "./Client.ts";
 import * as readline from "readline";
-import { renderLogo } from "./ui";
+import { renderLogo } from "./ui.ts";
 
 function showHelp() {
   console.log(renderLogo());

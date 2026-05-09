@@ -1,8 +1,12 @@
 {
   "version": "0.5.4",
   "name": "onlocal",
+  "main": "./index.ts",
   "module": "index.ts",
   "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
   "repository": {
     "url": "https://github.com/Abdulmumin1/onlocal"
   },

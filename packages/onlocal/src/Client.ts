@@ -1,6 +1,6 @@
-import { colors } from "./utils";
+import { colors } from "./utils.ts";
 import * as readline from "readline";
-import { renderSessionStatus, renderTunnelSummary, type SessionStatus } from "./ui";
+import { renderSessionStatus, renderTunnelSummary, type SessionStatus } from "./ui.ts";
 import type {
   WSMessage,
   RequestMessage,
@@ -9,7 +9,7 @@ import type {
   ResponseChunkMessage,
   ResponseEndMessage,
   TunnelMessage,
-} from "./types";
+} from "./types.ts";
 
 export interface TunnelOptions {
   port: number;
