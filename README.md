@@ -58,6 +58,40 @@ To use a self-hosted tunnel server, set `TUNNEL_DOMAIN` when starting the CLI:
 TUNNEL_DOMAIN=wss://my-tunnel.example.com onlocal 3000
 ```
 
+## SDK
+
+Use the JavaScript SDK when embedding onlocal inside another CLI or app:
+
+```ts
+import { startTunnel, TunnelClient } from "onlocal";
+
+const tunnel = await startTunnel({
+  port: 3000,
+  verbosity: "silent",
+});
+
+console.log(tunnel.url);
+
+await tunnel.stop();
+```
+
+For lower-level control, use `TunnelClient` directly:
+
+```ts
+const client = new TunnelClient({ port: 3000, verbosity: "silent" });
+
+client.on("ready", ({ url }) => {
+  console.log(url);
+});
+
+client.on("status", ({ status }) => {
+  console.log(status);
+});
+
+client.start();
+await client.waitUntilReady();
+```
+
 ## How It Works
 
 onlocal consists of two components:
