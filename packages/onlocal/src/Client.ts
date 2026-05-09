@@ -19,6 +19,49 @@ export interface TunnelOptions {
 }
 
 export type LogVerbosity = "silent" | "normal" | "verbose";
+export type TunnelClientStatus = SessionStatus;
+export type TunnelLifecycleEventMap = {
+  ready: TunnelReadyEvent;
+  status: TunnelStatusEvent;
+  request: TunnelRequestEvent;
+  error: TunnelErrorEvent;
+  closed: TunnelClosedEvent;
+};
+export type TunnelLifecycleEventName = keyof TunnelLifecycleEventMap;
+export type TunnelLifecycleListener<K extends TunnelLifecycleEventName> = (
+  event: TunnelLifecycleEventMap[K]
+) => void;
+export interface TunnelReadyEvent {
+  url: string;
+  clientId: string;
+  port: number;
+}
+export interface TunnelStatusEvent {
+  status: TunnelClientStatus;
+}
+export interface TunnelRequestEvent {
+  method: string;
+  path: string;
+  status: number;
+}
+export interface TunnelErrorEvent {
+  message: string;
+  error: unknown;
+}
+export interface TunnelClosedEvent {
+  code?: number;
+  reason?: string;
+  clean?: boolean;
+}
+export interface StartedTunnel {
+  url: string;
+  clientId: string;
+  client: TunnelClient;
+  stop: () => Promise<void>;
+}
+export interface StartTunnelOptions extends TunnelOptions {
+  readyTimeoutMs?: number;
+}
 type LogLevel = "always" | "normal" | "verbose";
 
 export class TunnelClient {
@@ -46,6 +89,14 @@ export class TunnelClient {
   sessionStatus: SessionStatus = "connecting";
   tunnelUrl: string | null = null;
   hasShownTunnel: boolean = false;
+  listeners: {
+    [K in TunnelLifecycleEventName]?: Set<TunnelLifecycleListener<K>>;
+  } = {};
+  readyWaiters: Array<{
+    resolve: (event: TunnelReadyEvent) => void;
+    reject: (error: Error) => void;
+    timer: ReturnType<typeof setTimeout> | null;
+  }> = [];
 
   sanitizeRequestHeaders(headers: Record<string, string>): Record<string, string> {
     const nextHeaders = { ...headers };
@@ -334,6 +385,10 @@ export class TunnelClient {
   }
 
   writeVerboseError(prefix: string, error: unknown) {
+    this.emit("error", {
+      message: prefix,
+      error,
+    });
     this.writeLine(
       `${colors.red}${prefix}:${colors.reset} ${this.formatError(error)}`,
       "verbose"
@@ -363,14 +418,16 @@ export class TunnelClient {
     }
 
     this.sessionStatus = status;
+    this.emit("status", { status });
     this.renderSessionStatusLine();
   }
 
   renderTunnel(url: string) {
     const hasUrlChanged = this.tunnelUrl !== url;
+    const shouldAnnounceReady = !this.hasShownTunnel || hasUrlChanged;
     this.tunnelUrl = url;
 
-    if (!this.hasShownTunnel || hasUrlChanged) {
+    if (shouldAnnounceReady) {
       this.hasShownTunnel = true;
       this.writeLine(
         renderTunnelSummary(url, this.port),
@@ -378,7 +435,104 @@ export class TunnelClient {
       );
     }
 
+    this.resolveReadyWaiters(url);
+    if (shouldAnnounceReady) {
+      this.emit("ready", {
+        url,
+        clientId: this.clientId,
+        port: this.port,
+      });
+    }
     this.renderSessionStatusLine();
+  }
+
+  on<K extends TunnelLifecycleEventName>(
+    eventName: K,
+    listener: TunnelLifecycleListener<K>
+  ): () => void {
+    const listeners = (this.listeners[eventName] ??= new Set()) as Set<
+      TunnelLifecycleListener<K>
+    >;
+    listeners.add(listener);
+    return () => this.off(eventName, listener);
+  }
+
+  off<K extends TunnelLifecycleEventName>(
+    eventName: K,
+    listener: TunnelLifecycleListener<K>
+  ): void {
+    const listeners = this.listeners[eventName] as
+      | Set<TunnelLifecycleListener<K>>
+      | undefined;
+    listeners?.delete(listener);
+  }
+
+  emit<K extends TunnelLifecycleEventName>(
+    eventName: K,
+    event: TunnelLifecycleEventMap[K]
+  ): void {
+    const listeners = this.listeners[eventName] as
+      | Set<TunnelLifecycleListener<K>>
+      | undefined;
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of [...listeners]) {
+      try {
+        listener(event);
+      } catch (error) {
+        if (eventName !== "error") {
+          this.writeVerboseError("Tunnel event listener failed", error);
+        }
+      }
+    }
+  }
+
+  waitUntilReady(timeoutMs = TunnelClient.SOCKET_CONNECT_TIMEOUT_MS): Promise<TunnelReadyEvent> {
+    if (this.tunnelUrl && this.clientId) {
+      return Promise.resolve({
+        url: this.tunnelUrl,
+        clientId: this.clientId,
+        port: this.port,
+      });
+    }
+
+    return new Promise<TunnelReadyEvent>((resolve, reject) => {
+      const waiter = {
+        resolve,
+        reject,
+        timer: timeoutMs > 0
+          ? setTimeout(() => {
+              this.readyWaiters = this.readyWaiters.filter((item) => item !== waiter);
+              reject(new Error("Timed out waiting for tunnel URL"));
+            }, timeoutMs)
+          : null,
+      };
+
+      this.readyWaiters.push(waiter);
+    });
+  }
+
+  resolveReadyWaiters(url: string): void {
+    if (!this.clientId) {
+      return;
+    }
+
+    const waiters = this.readyWaiters;
+    this.readyWaiters = [];
+    const event = {
+      url,
+      clientId: this.clientId,
+      port: this.port,
+    };
+
+    for (const waiter of waiters) {
+      if (waiter.timer) {
+        clearTimeout(waiter.timer);
+      }
+      waiter.resolve(event);
+    }
   }
 
   finishStatusLine() {
@@ -472,6 +626,7 @@ export class TunnelClient {
     }
 
     this.finishStatusLine();
+    this.emit("closed", {});
   }
 
   createWebSocket() {
@@ -619,8 +774,17 @@ export class TunnelClient {
         this.writeLine(
           `${methodColor}[${req.method}]${colors.reset} ${colors[statusColor as keyof typeof colors]}${res.status}${colors.reset} ${colors.gray}${url.pathname}${url.search}${colors.reset}`
         );
+        this.emit("request", {
+          method: req.method,
+          path: `${url.pathname}${url.search}`,
+          status: res.status,
+        });
         await this.sendStreamedResponse(req, res, sendControlMessage);
       } catch (error) {
+        this.emit("error", {
+          message: "Failed to proxy request",
+          error,
+        });
         this.writeLine(
           `${colors.red}Failed to proxy request:${colors.reset} ${req.method} ${req.url}`,
           "always"
@@ -702,6 +866,11 @@ export class TunnelClient {
       this.ws = null;
       this.sendQueue = Promise.resolve();
       this.setSessionStatus("reconnecting");
+      this.emit("closed", {
+        code: event.code,
+        reason: event.reason,
+        clean: event.wasClean,
+      });
 
       // console.error(
       //   `${colors.red} Control websocket closed:${colors.reset} code=${event.code} clean=${event.wasClean} reason=${event.reason || "n/a"} active=${this.activeRequests} queued=${requestQueue.length} buffered=${ws.bufferedAmount}`
@@ -737,7 +906,25 @@ export class TunnelClient {
       }
 
       this.setSessionStatus("reconnecting");
+      this.emit("error", {
+        message: "WebSocket error",
+        error,
+      });
       this.writeVerboseError("WebSocket error", error);
     };
   }
+}
+
+export async function startTunnel(options: StartTunnelOptions): Promise<StartedTunnel> {
+  const client = new TunnelClient(options);
+  client.start();
+  const ready = await client.waitUntilReady(options.readyTimeoutMs);
+
+  return {
+    ...ready,
+    client,
+    stop: async () => {
+      await client.shutdown();
+    },
+  };
 }
