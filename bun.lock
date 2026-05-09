@@ -45,7 +45,7 @@
     },
     "packages/onlocal": {
       "name": "onlocal",
-      "version": "0.5.0",
+      "version": "0.5.4",
       "bin": {
         "onlocal": "dist/cli.js",
       },
@@ -67,7 +67,7 @@
     },
     "packages/ui": {
       "name": "@onlocal/ui",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "dependencies": {
         "@tauri-apps/plugin-shell": "^2.1.0",
         "react": "^18.3.1",

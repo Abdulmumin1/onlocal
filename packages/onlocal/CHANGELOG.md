@@ -1,5 +1,11 @@
 # onlocal
 
+## 0.5.5
+
+### Patch Changes
+
+- Add explicit `.ts` extensions for Deno/Bun compatibility, use `with { type: "json" }` for JSON imports, and declare `main`/`exports` fields in `package.json`.
+
 ## 0.5.4
 
 ### Patch Changes
