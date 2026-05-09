@@ -1,12 +1,23 @@
 {
   "version": "0.5.5",
   "name": "onlocal",
-  "main": "./index.ts",
-  "module": "index.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
   "type": "module",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
   },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "repository": {
     "url": "https://github.com/Abdulmumin1/onlocal"
   },
@@ -15,14 +26,13 @@
   },
   "dependencies": {},
   "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
   },
   "scripts": {
     "dev": "bun src/cli.ts",
-    "build": "bun build ./src/cli.ts --outfile ./dist/cli.js --target node && bun build ./index.ts --outfile ./dist/index.js --target node",
-    "build:bin": "bun scripts/build-bin.ts"
+    "build": "bun build ./src/cli.ts --outfile ./dist/cli.js --target node && bun build ./index.ts --outfile ./dist/index.js --target node && bun x tsc -p ./tsconfig.build.json",
+    "build:bin": "bun scripts/build-bin.ts",
+    "prepack": "bun run build"
   }
 }
