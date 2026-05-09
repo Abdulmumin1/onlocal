@@ -1,5 +1,13 @@
 # onlocal
 
+## 0.5.5
+
+### Patch Changes
+
+- acf8904: Add SDK lifecycle helpers for embedded tunnel clients.
+
+  The `TunnelClient` now exposes lifecycle listeners for ready, status, request, error, and closed events, plus `waitUntilReady()` for consumers that need the public tunnel URL without scraping CLI output. A new `startTunnel()` helper wraps the common SDK flow and returns `{ url, clientId, client, stop }`.
+
 ## 0.5.4
 
 ### Patch Changes
