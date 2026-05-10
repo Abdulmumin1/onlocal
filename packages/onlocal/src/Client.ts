@@ -457,7 +457,7 @@ export class TunnelClient {
   }
 
   renderSessionStatusLine() {
-    if (!this.hasShownTunnel) {
+    if (this.verbosity === "silent" || !this.hasShownTunnel) {
       return;
     }
 
@@ -605,6 +605,10 @@ export class TunnelClient {
   }
 
   finishStatusLine() {
+    if (this.verbosity === "silent") {
+      return;
+    }
+
     if (process.stdout.isTTY && this.hasShownTunnel) {
       readline.clearLine(process.stdout, 0);
       readline.cursorTo(process.stdout, 0);
