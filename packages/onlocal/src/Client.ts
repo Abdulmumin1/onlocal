@@ -398,12 +398,12 @@ export class TunnelClient {
   }
 
   shouldLog(level: LogLevel = "normal"): boolean {
-    if (level === "always") {
-      return true;
-    }
-
     if (this.verbosity === "silent") {
       return false;
+    }
+
+    if (level === "always") {
+      return true;
     }
 
     if (level === "verbose") {
