@@ -7,3 +7,5 @@
 - All active and queued local requests are cleaned up when the control WebSocket drops, so reconnect recovers cleanly.
 - Durable Object now persists connection state via `serializeAttachment`/`deserializeAttachment` across hibernation wakes.
 - New observability counters (`wakes`, `cancellations`, `timeouts`, `streamedResponses`, etc.) exposed via the DO status endpoint and persist across hibernation.
+- Fixed `shutdown()` hanging the event loop when network is slow: `releaseClientId()` now has a 5s timeout and is fire-and-forget rather than awaited.
+- Added `TunnelClient.destroy()` (synchronous teardown, no network I/O) and `StartedTunnel.destroy` for host processes that need to exit immediately on Ctrl+C.

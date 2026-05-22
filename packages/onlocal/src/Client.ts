@@ -60,6 +60,7 @@ export interface StartedTunnel {
   clientId: string;
   client: TunnelClient;
   stop: () => Promise<void>;
+  destroy: () => void;
 }
 export interface StartTunnelOptions extends TunnelOptions {
   readyTimeoutMs?: number;
@@ -743,15 +744,23 @@ export class TunnelClient {
       return;
     }
 
-    await fetch(
-      `${this.getHttpBaseUrl()}/client-id/${encodeURIComponent(clientId)}/release`,
-      {
-        method: "DELETE",
-        headers: {
-          "X-Reconnect-Token": this.reconnectToken,
-        },
-      }
-    );
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      await fetch(
+        `${this.getHttpBaseUrl()}/client-id/${encodeURIComponent(clientId)}/release`,
+        {
+          method: "DELETE",
+          headers: {
+            "X-Reconnect-Token": this.reconnectToken,
+          },
+          signal: controller.signal,
+        }
+      );
+      clearTimeout(timer);
+    } catch {
+      // Best-effort — do not block shutdown on network errors
+    }
   }
 
   async shutdown() {
@@ -760,17 +769,58 @@ export class TunnelClient {
     this.clearReconnectTimer();
     this.clearConnectTimeoutTimer();
     this.clearControlKeepAlive();
+    this.cancelAllActiveRequests();
 
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.close(1000, "Client shutting down");
+    const ws = this.ws;
+    if (ws) {
+      this.ws = null;
+      try {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close(1000, "Client shutting down");
+        }
+      } catch {}
     }
 
-    try {
-      await this.releaseClientId();
-    } catch (error) {
-      this.writeVerboseError("Failed to release client ID", error);
+    // Release client ID as fire-and-forget — do not await, do not
+    // keep the event loop alive if the network is slow.
+    this.releaseClientId().catch(() => {});
+
+    this.finishStatusLine();
+    this.emit("closed", {});
+  }
+
+  /**
+   * Synchronous teardown. Does not touch the network. Use when the
+   * host process is about to exit and you need the event loop clean
+   * immediately.
+   */
+  destroy() {
+    this.isStopping = true;
+    this.clearReconnectTimer();
+    this.clearConnectTimeoutTimer();
+    this.clearControlKeepAlive();
+    this.cancelAllActiveRequests();
+
+    const ws = this.ws;
+    this.ws = null;
+    this.sendQueue = Promise.resolve();
+    if (ws) {
+      try {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+      } catch {}
     }
 
+    this.setSessionStatus("offline");
     this.finishStatusLine();
     this.emit("closed", {});
   }
@@ -1113,6 +1163,9 @@ export async function startTunnel(options: StartTunnelOptions): Promise<StartedT
   return {
     ...ready,
     client,
+    destroy: () => {
+      client.destroy();
+    },
     stop: async () => {
       await client.shutdown();
     },
