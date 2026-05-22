@@ -6,7 +6,7 @@ import {
   resolveReconnectToken,
 } from './websocket';
 
-const app = new Hono<{ Bindings: { TUNNEL_DO: DurableObjectNamespace, TUNNEL_KV: KVNamespace, TUNNEL_DOMAIN: string } }>();
+const app = new Hono<{ Bindings: { TUNNEL_DO: DurableObjectNamespace, TUNNEL_KV: KVNamespace, TUNNEL_DOMAIN: string, LANDING: Fetcher } }>();
 const CLIENT_ID_PATTERN = /^[a-z0-9]{7,}$/;
 
 function isValidClientId(clientId: string): boolean {
@@ -19,6 +19,22 @@ function getClientIdFromHost(host: string, domain: string): string | null {
   );
 
   return subdomainMatch?.[1] ?? null;
+}
+
+interface TunnelStatusResponse {
+  active: boolean;
+  clientId: string | null;
+  activeRequests: number;
+  metrics: {
+    wakes: number;
+    controlConnections: number;
+    totalRequests: number;
+    streamedResponses: number;
+    cancellations: number;
+    timeouts: number;
+    chunksSent: number;
+    startedAt: number;
+  };
 }
 
 async function getTunnelStatus(
@@ -42,7 +58,7 @@ async function getTunnelStatus(
     return { doIdString, active: true };
   }
 
-  const status = (await response.json()) as { active: boolean };
+  const status = (await response.json()) as TunnelStatusResponse;
   return { doIdString, active: status.active };
 }
 
@@ -176,6 +192,32 @@ app.get('/client-id/:clientId/status', async (c) => {
   }
 
   return c.json({ available: true });
+});
+
+app.get('/client-id/:clientId/metrics', async (c) => {
+  const clientId = c.req.param('clientId');
+
+  if (!isValidClientId(clientId)) {
+    return c.text('Invalid client ID. Use at least 7 lowercase letters or numbers.', 400);
+  }
+
+  const existingTunnel = await getTunnelStatus(c.env, clientId);
+  if (!existingTunnel) {
+    return c.json({ error: 'Tunnel not found' }, 404);
+  }
+
+  const doId = c.env.TUNNEL_DO.idFromString(existingTunnel.doIdString);
+  const stub = c.env.TUNNEL_DO.get(doId);
+  const response = await stub.fetch('https://internal/status', {
+    headers: { 'X-Internal-Action': 'status' },
+  });
+
+  if (!response.ok) {
+    return c.json({ error: 'Failed to fetch metrics' }, 502);
+  }
+
+  const status = await response.json();
+  return c.json(status);
 });
 
 app.delete('/client-id/:clientId/release', async (c) => {

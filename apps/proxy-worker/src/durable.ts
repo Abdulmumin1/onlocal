@@ -7,6 +7,7 @@ import {
   ResponseChunkMessage,
   ResponseEndMessage,
   TunnelMessage,
+  RequestCancelMessage,
 } from "./types";
 import { isWebSocketUpgrade } from "./websocket";
 
@@ -15,12 +16,59 @@ interface Env {
   TUNNEL_DOMAIN: string;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Metrics                                                            */
+/* ------------------------------------------------------------------ */
+
+interface TunnelMetrics {
+  wakes: number;
+  controlConnections: number;
+  totalRequests: number;
+  streamedResponses: number;
+  cancellations: number;
+  timeouts: number;
+  chunksSent: number;
+  startedAt: number;
+}
+
+const METRICS_STORAGE_KEY = "_metrics";
+
+function emptyMetrics(): TunnelMetrics {
+  return {
+    wakes: 0,
+    controlConnections: 0,
+    totalRequests: 0,
+    streamedResponses: 0,
+    cancellations: 0,
+    timeouts: 0,
+    chunksSent: 0,
+    startedAt: Date.now(),
+  };
+}
+
+async function loadMetrics(storage: DurableObjectStorage): Promise<TunnelMetrics> {
+  const raw = await storage.get<TunnelMetrics>(METRICS_STORAGE_KEY);
+  if (!raw) {
+    return emptyMetrics();
+  }
+  return raw;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Constants                                                          */
+/* ------------------------------------------------------------------ */
+
 const CONTROL_SOCKET_TAG = "control";
 const CONTROL_CONNECTION_TAG_PREFIX = "control-connection:";
 const REQUEST_TIMEOUT_MS = 60000;
-const CONTROL_PING_INTERVAL_MS = 15000;
-const CONTROL_PONG_TIMEOUT_MS = 30000;
 const textEncoder = new TextEncoder();
+
+interface ControlSocketAttachment {
+  kind: "control";
+  clientId: string;
+  reconnectToken: string;
+  connectionId: string;
+}
 
 interface PendingResponseStream {
   controller: ReadableStreamDefaultController<Uint8Array>;
@@ -37,19 +85,60 @@ interface PendingRequest {
   responseStream: PendingResponseStream | null;
 }
 
+/* ------------------------------------------------------------------ */
+/*  TunnelDO                                                           */
+/* ------------------------------------------------------------------ */
+
 export class TunnelDO extends DurableObject<Env> {
   clients: Map<string, WebSocket> = new Map();
   pendingRequests: Map<string, PendingRequest>;
   clientId: string | null = null;
   reconnectToken: string | null = null;
   activeConnectionId: string | null = null;
-  pingInterval: ReturnType<typeof setInterval> | null = null;
-  pongTimeout: ReturnType<typeof setTimeout> | null = null;
   disconnectCleanupTimer: ReturnType<typeof setTimeout> | null = null;
+  metrics: TunnelMetrics = emptyMetrics();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.pendingRequests = new Map();
+    this.metrics = emptyMetrics();
+    this.restoreHibernatedSockets();
+    this.loadAndBumpMetrics();
+    this.ctx.setWebSocketAutoResponse(
+      new WebSocketRequestResponsePair(
+        JSON.stringify({ type: "ping" } satisfies WSMessage),
+        JSON.stringify({ type: "pong" } satisfies WSMessage)
+      )
+    );
+  }
+
+  /* ---- metrics helpers ------------------------------------------- */
+
+  async loadAndBumpMetrics() {
+    const stored = await loadMetrics(this.ctx.storage);
+    stored.wakes++;
+    this.metrics = stored;
+    this.ctx.storage.put(METRICS_STORAGE_KEY, this.metrics);
+  }
+
+  flushMetrics() {
+    this.ctx.storage.put(METRICS_STORAGE_KEY, this.metrics);
+  }
+
+  /* ---- hibernation restore --------------------------------------- */
+
+  restoreHibernatedSockets() {
+    for (const ws of this.ctx.getWebSockets(CONTROL_SOCKET_TAG)) {
+      const attachment = ws.deserializeAttachment() as ControlSocketAttachment | null;
+      if (!attachment || attachment.kind !== "control") {
+        continue;
+      }
+
+      this.clientId = attachment.clientId;
+      this.reconnectToken = attachment.reconnectToken;
+      this.activeConnectionId = attachment.connectionId;
+      this.clients.set(attachment.clientId, ws);
+    }
   }
 
   async initialize() {
@@ -132,53 +221,6 @@ export class TunnelDO extends DurableObject<Env> {
     }
   }
 
-  clearControlPongTimeout() {
-    if (this.pongTimeout !== null) {
-      clearTimeout(this.pongTimeout);
-      this.pongTimeout = null;
-    }
-  }
-
-  clearControlKeepAlive() {
-    if (this.pingInterval !== null) {
-      clearInterval(this.pingInterval);
-      this.pingInterval = null;
-    }
-
-    this.clearControlPongTimeout();
-  }
-
-  startControlKeepAlive(ws: WebSocket) {
-    this.clearControlKeepAlive();
-
-    this.pingInterval = setInterval(() => {
-      if (this.getControlWebSocket() !== ws || ws.readyState !== WebSocket.OPEN) {
-        this.clearControlKeepAlive();
-        return;
-      }
-
-      try {
-        ws.send(JSON.stringify({ type: "ping" } satisfies WSMessage));
-      } catch {
-        try {
-          ws.close(1011, "Ping failed");
-        } catch {}
-        return;
-      }
-
-      this.clearControlPongTimeout();
-      this.pongTimeout = setTimeout(() => {
-        if (this.getControlWebSocket() !== ws || ws.readyState !== WebSocket.OPEN) {
-          return;
-        }
-
-        try {
-          ws.close(1011, "Pong timeout");
-        } catch {}
-      }, CONTROL_PONG_TIMEOUT_MS);
-    }, CONTROL_PING_INTERVAL_MS);
-  }
-
   refreshResponseStreamTimeout(reqId: string) {
     const pending = this.pendingRequests.get(reqId);
     if (!pending?.responseStream) {
@@ -188,10 +230,14 @@ export class TunnelDO extends DurableObject<Env> {
     this.clearResponseStreamTimeout(pending.responseStream);
   }
 
-  failPendingRequest(reqId: string, error: Error) {
+  failPendingRequest(reqId: string, error: Error, cancelUpstream = false) {
     const pending = this.pendingRequests.get(reqId);
     if (!pending) {
       return;
+    }
+
+    if (cancelUpstream) {
+      this.sendRequestCancel(reqId);
     }
 
     this.pendingRequests.delete(reqId);
@@ -206,6 +252,24 @@ export class TunnelDO extends DurableObject<Env> {
     }
 
     pending.reject(error);
+  }
+
+  sendRequestCancel(reqId: string) {
+    this.metrics.cancellations++;
+    this.flushMetrics();
+
+    const controlWs = this.getControlWebSocket();
+    if (!controlWs) {
+      return;
+    }
+
+    try {
+      controlWs.send(
+        JSON.stringify({ type: "request_cancel", id: reqId } satisfies RequestCancelMessage)
+      );
+    } catch (error) {
+      console.error("Failed to send request cancellation:", error);
+    }
   }
 
   decodeBase64Chunk(data: string): Uint8Array {
@@ -223,12 +287,19 @@ export class TunnelDO extends DurableObject<Env> {
     return status === 204 || status === 205 || status === 304;
   }
 
+  /* ---- HTTP fetch ------------------------------------------------- */
+
   async fetch(request: Request) {
     await this.initialize();
 
     const internalAction = request.headers.get("X-Internal-Action");
     if (internalAction === "status") {
-      return Response.json({ active: this.getControlWebSocket() !== null });
+      return Response.json({
+        active: this.getControlWebSocket() !== null,
+        clientId: this.clientId,
+        activeRequests: this.pendingRequests.size,
+        metrics: this.metrics,
+      });
     }
 
     if (internalAction === "release") {
@@ -278,6 +349,12 @@ export class TunnelDO extends DurableObject<Env> {
           CONTROL_SOCKET_TAG,
           `${CONTROL_CONNECTION_TAG_PREFIX}${connectionId}`,
         ]);
+        server.serializeAttachment({
+          kind: "control",
+          clientId: request.headers.get("X-Client-Id") || reconnectHeader || this.clientId || "",
+          reconnectToken,
+          connectionId,
+        } satisfies ControlSocketAttachment);
         this.handleWebSocket(server, request);
 
         return new Response(null, {
@@ -305,6 +382,11 @@ export class TunnelDO extends DurableObject<Env> {
       return new Response("Client not connected", { status: 503 });
     }
 
+    this.metrics.totalRequests++;
+    if (this.metrics.totalRequests % 50 === 0) {
+      this.flushMetrics();
+    }
+
     const reqId = Math.random().toString(36).substr(2, 9);
     console.log(
       "Sending HTTP request to client:",
@@ -326,18 +408,37 @@ export class TunnelDO extends DurableObject<Env> {
     };
 
     return new Promise<Response>((resolve, reject) => {
+      const abortPendingRequest = () => {
+        this.failPendingRequest(reqId, new Error("Client disconnected"), true);
+      };
       const timeout = setTimeout(() => {
-        this.failPendingRequest(reqId, new Error("Timeout"));
+        request.signal.removeEventListener("abort", abortPendingRequest);
+        this.failPendingRequest(reqId, new Error("Timeout"), true);
+        this.metrics.timeouts++;
+        this.flushMetrics();
       }, REQUEST_TIMEOUT_MS);
 
+      request.signal.addEventListener("abort", abortPendingRequest, { once: true });
+
       this.pendingRequests.set(reqId, {
-        resolve,
-        reject,
+        resolve: (res) => {
+          request.signal.removeEventListener("abort", abortPendingRequest);
+          resolve(res);
+        },
+        reject: (err) => {
+          request.signal.removeEventListener("abort", abortPendingRequest);
+          reject(err);
+        },
         url: request.url,
         method: request.method,
         timeout,
         responseStream: null,
       });
+
+      if (request.signal.aborted) {
+        abortPendingRequest();
+        return;
+      }
 
       try {
         controlWs.send(JSON.stringify(requestData));
@@ -354,6 +455,8 @@ export class TunnelDO extends DurableObject<Env> {
       return new Response("Timeout", { status: 504 });
     });
   }
+
+  /* ---- WebSocket message handler ---------------------------------- */
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     try {
@@ -392,6 +495,9 @@ export class TunnelDO extends DurableObject<Env> {
           console.error("Error processing response message:", e);
         }
       } else if (data.type === "response_start") {
+        this.metrics.streamedResponses++;
+        this.flushMetrics();
+
         const resMsg = data as ResponseStartMessage;
         const pending = this.pendingRequests.get(resMsg.id);
 
@@ -437,6 +543,7 @@ export class TunnelDO extends DurableObject<Env> {
             this.clearPendingTimeout(current);
             this.clearResponseStreamTimeout(current.responseStream);
             this.pendingRequests.delete(resMsg.id);
+            this.sendRequestCancel(resMsg.id);
           },
         });
 
@@ -463,6 +570,11 @@ export class TunnelDO extends DurableObject<Env> {
         console.log("Starting streamed response:", resMsg.id);
         pending.resolve(response);
       } else if (data.type === "response_chunk") {
+        this.metrics.chunksSent++;
+        if (this.metrics.chunksSent % 200 === 0) {
+          this.flushMetrics();
+        }
+
         const chunkMsg = data as ResponseChunkMessage;
         const pending = this.pendingRequests.get(chunkMsg.id);
 
@@ -483,7 +595,8 @@ export class TunnelDO extends DurableObject<Env> {
           console.error("Error processing response chunk:", error);
           this.failPendingRequest(
             chunkMsg.id,
-            new Error("Invalid streamed response chunk")
+            new Error("Invalid streamed response chunk"),
+            true
           );
         }
       } else if (data.type === "response_end") {
@@ -509,15 +622,13 @@ export class TunnelDO extends DurableObject<Env> {
       } else if (data.type === "ping") {
         ws.send(JSON.stringify({ type: "pong" }));
         console.log("Sent pong to client");
-      } else if (data.type === "pong") {
-        // Received pong from client, keepalive ok
-        console.log("Received pong from client");
-        this.clearControlPongTimeout();
       }
     } catch (e) {
       console.error("Invalid message:", message);
     }
   }
+
+  /* ---- WebSocket close handler ------------------------------------ */
 
   async webSocketClose(
     ws: WebSocket,
@@ -535,12 +646,16 @@ export class TunnelDO extends DurableObject<Env> {
       return;
     }
 
-    this.clearControlKeepAlive();
     this.activeConnectionId = null;
     this.scheduleDisconnectCleanup();
   }
 
+  /* ---- Control WebSocket handshake --------------------------------- */
+
   async handleWebSocket(ws: WebSocket, request: Request) {
+    this.metrics.controlConnections++;
+    this.flushMetrics();
+
     const reconnectToken = request.headers.get("X-Reconnect-Token");
     const connectionId = request.headers.get("X-Connection-Id");
 
@@ -583,9 +698,14 @@ export class TunnelDO extends DurableObject<Env> {
     }
 
     this.clients.set(this.clientId, ws);
+    ws.serializeAttachment({
+      kind: "control",
+      clientId: this.clientId,
+      reconnectToken: this.reconnectToken,
+      connectionId,
+    } satisfies ControlSocketAttachment);
     await this.ctx.storage.put("clientId", this.clientId);
     await this.ctx.storage.put("reconnectToken", this.reconnectToken);
-    this.startControlKeepAlive(ws);
 
     // Send tunnel URL
     const domain = this.env.TUNNEL_DOMAIN || "localhost";
