@@ -8,6 +8,7 @@ import type {
   ResponseStartMessage,
   ResponseChunkMessage,
   ResponseEndMessage,
+  RequestCancelMessage,
   TunnelMessage,
 } from "./types.js";
 
@@ -59,11 +60,13 @@ export interface StartedTunnel {
   clientId: string;
   client: TunnelClient;
   stop: () => Promise<void>;
+  destroy: () => void;
 }
 export interface StartTunnelOptions extends TunnelOptions {
   readyTimeoutMs?: number;
 }
 type LogLevel = "always" | "normal" | "verbose";
+type QueuedRequestRunner = (() => void | Promise<void>) & { requestId: string };
 
 export class TunnelClient {
   static readonly MAX_TEXT_CHUNK_CHARS = 48 * 1024;
@@ -83,6 +86,7 @@ export class TunnelClient {
   port: number;
   maxConcurrent: number;
   activeRequests: number = 0;
+  activeRequestControllers: Map<string, AbortController> = new Map();
   backoffDelay: number = 1000;
   isRetry: boolean = false;
   ws: WebSocket | null = null;
@@ -263,6 +267,24 @@ export class TunnelClient {
     } finally {
       reader.releaseLock();
     }
+  }
+
+  cancelActiveRequest(reqId: string) {
+    const controller = this.activeRequestControllers.get(reqId);
+    if (!controller) {
+      return;
+    }
+
+    controller.abort();
+    this.activeRequestControllers.delete(reqId);
+  }
+
+  cancelAllActiveRequests() {
+    for (const controller of this.activeRequestControllers.values()) {
+      controller.abort();
+    }
+
+    this.activeRequestControllers.clear();
   }
 
   async sendTextStream(
@@ -722,15 +744,23 @@ export class TunnelClient {
       return;
     }
 
-    await fetch(
-      `${this.getHttpBaseUrl()}/client-id/${encodeURIComponent(clientId)}/release`,
-      {
-        method: "DELETE",
-        headers: {
-          "X-Reconnect-Token": this.reconnectToken,
-        },
-      }
-    );
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      await fetch(
+        `${this.getHttpBaseUrl()}/client-id/${encodeURIComponent(clientId)}/release`,
+        {
+          method: "DELETE",
+          headers: {
+            "X-Reconnect-Token": this.reconnectToken,
+          },
+          signal: controller.signal,
+        }
+      );
+      clearTimeout(timer);
+    } catch {
+      // Best-effort — do not block shutdown on network errors
+    }
   }
 
   async shutdown() {
@@ -739,17 +769,58 @@ export class TunnelClient {
     this.clearReconnectTimer();
     this.clearConnectTimeoutTimer();
     this.clearControlKeepAlive();
+    this.cancelAllActiveRequests();
 
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.close(1000, "Client shutting down");
+    const ws = this.ws;
+    if (ws) {
+      this.ws = null;
+      try {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close(1000, "Client shutting down");
+        }
+      } catch {}
     }
 
-    try {
-      await this.releaseClientId();
-    } catch (error) {
-      this.writeVerboseError("Failed to release client ID", error);
+    // Release client ID as fire-and-forget — do not await, do not
+    // keep the event loop alive if the network is slow.
+    this.releaseClientId().catch(() => {});
+
+    this.finishStatusLine();
+    this.emit("closed", {});
+  }
+
+  /**
+   * Synchronous teardown. Does not touch the network. Use when the
+   * host process is about to exit and you need the event loop clean
+   * immediately.
+   */
+  destroy() {
+    this.isStopping = true;
+    this.clearReconnectTimer();
+    this.clearConnectTimeoutTimer();
+    this.clearControlKeepAlive();
+    this.cancelAllActiveRequests();
+
+    const ws = this.ws;
+    this.ws = null;
+    this.sendQueue = Promise.resolve();
+    if (ws) {
+      try {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+      } catch {}
     }
 
+    this.setSessionStatus("offline");
     this.finishStatusLine();
     this.emit("closed", {});
   }
@@ -818,7 +889,7 @@ export class TunnelClient {
         .replace(/\/ws$/, "")
         .replace(/:\d+$/, "") || "localhost";
 
-    let requestQueue: (() => void)[] = [];
+    let requestQueue: QueuedRequestRunner[] = [];
     const runNextQueuedRequest = () => {
       if (this.activeRequests >= this.maxConcurrent) {
         return;
@@ -888,6 +959,8 @@ export class TunnelClient {
 
     const processRequest = async (req: RequestMessage) => {
       this.activeRequests++;
+      const abortController = new AbortController();
+      this.activeRequestControllers.set(req.id, abortController);
 
       try {
         const url = new URL(req.url);
@@ -896,6 +969,7 @@ export class TunnelClient {
           method: req.method,
           headers: this.sanitizeRequestHeaders(req.headers),
           body: req.body,
+          signal: abortController.signal,
         });
         const statusColor =
           res.status >= 200 && res.status < 300
@@ -917,6 +991,14 @@ export class TunnelClient {
         });
         await this.sendStreamedResponse(req, res, sendControlMessage);
       } catch (error) {
+        if (abortController.signal.aborted) {
+          this.writeLine(
+            `${colors.dim}Cancelled proxied request:${colors.reset} ${req.method} ${req.url}`,
+            "verbose"
+          );
+          return;
+        }
+
         this.emit("error", {
           message: "Failed to proxy request",
           error,
@@ -943,6 +1025,7 @@ export class TunnelClient {
           await sendControlMessage(responseData);
         } catch {}
       } finally {
+        this.activeRequestControllers.delete(req.id);
         this.activeRequests = Math.max(0, this.activeRequests - 1);
         runNextQueuedRequest();
       }
@@ -960,8 +1043,21 @@ export class TunnelClient {
           if (this.activeRequests < this.maxConcurrent) {
             processRequest(req);
           } else {
-            requestQueue.push(() => processRequest(req));
+            const runQueuedRequest = (() => processRequest(req)) as QueuedRequestRunner;
+            runQueuedRequest.requestId = req.id;
+            requestQueue.push(runQueuedRequest);
           }
+        } else if (data.type === "request_cancel") {
+          const cancel = data as RequestCancelMessage;
+          const queuedIndex = requestQueue.findIndex((runQueuedRequest) => {
+            return runQueuedRequest.requestId === cancel.id;
+          });
+
+          if (queuedIndex >= 0) {
+            requestQueue.splice(queuedIndex, 1);
+          }
+
+          this.cancelActiveRequest(cancel.id);
         } else if (data.type === "tunnel") {
           const tunnel = data as TunnelMessage;
           const host = new URL(tunnel.url).host;
@@ -1004,6 +1100,8 @@ export class TunnelClient {
 
       this.clearConnectTimeoutTimer();
       this.clearControlKeepAlive();
+      this.cancelAllActiveRequests();
+      requestQueue = [];
       this.ws = null;
       this.sendQueue = Promise.resolve();
       this.setSessionStatus("reconnecting");
@@ -1065,6 +1163,9 @@ export async function startTunnel(options: StartTunnelOptions): Promise<StartedT
   return {
     ...ready,
     client,
+    destroy: () => {
+      client.destroy();
+    },
     stop: async () => {
       await client.shutdown();
     },

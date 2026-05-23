@@ -5,6 +5,7 @@ export interface WSMessage {
     | 'response_start'
     | 'response_chunk'
     | 'response_end'
+    | 'request_cancel'
     | 'port'
     | 'tunnel'
     | 'ping'
@@ -18,6 +19,11 @@ export interface RequestMessage extends WSMessage {
   url: string;
   headers: Record<string, string>;
   body: string | null;
+}
+
+export interface RequestCancelMessage extends WSMessage {
+  type: 'request_cancel';
+  id: string;
 }
 
 export interface ResponseMessage extends WSMessage {
