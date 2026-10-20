@@ -8,6 +8,7 @@ import {
 
 const app = new Hono<{ Bindings: { TUNNEL_DO: DurableObjectNamespace, TUNNEL_KV: KVNamespace, TUNNEL_DOMAIN: string, LANDING: Fetcher } }>();
 const CLIENT_ID_PATTERN = /^[a-z0-9]{7,}$/;
+const TUNNEL_LOOKUP_CACHE_TTL_SECONDS = 60;
 
 function isValidClientId(clientId: string): boolean {
   return CLIENT_ID_PATTERN.test(clientId);
@@ -67,7 +68,10 @@ async function proxyTunnelRequest(
   request: Request,
   clientId: string
 ) {
-  const doIdString = await env.TUNNEL_KV.get(clientId);
+  // Hot path: runs on every tunneled request. Cache at the edge to avoid one KV
+  // read per request (60s is KV's minimum cacheTtl). getTunnelStatus stays uncached
+  // because it gates tunnel creation/release and needs fresh data.
+  const doIdString = await env.TUNNEL_KV.get(clientId, { cacheTtl: TUNNEL_LOOKUP_CACHE_TTL_SECONDS });
   console.log('doIdString from KV:', doIdString);
   if (!doIdString) {
     return new Response('Tunnel not found', { status: 404 });
